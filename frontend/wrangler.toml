@@ -1,0 +1,20 @@
+# Cloudflare Pages Configuration
+# This file is optional - Cloudflare Pages auto-detects static sites
+
+name = "ataram-email-analyzer"
+compatibility_date = "2024-01-01"
+
+[site]
+bucket = "./src"
+
+# Custom domain configuration (set in Cloudflare dashboard)
+# ataram.uk -> Cloudflare Pages
+
+# Build configuration
+[build]
+command = ""
+cwd = "src"
+watch_dir = "src"
+
+# Environment variables (set in Cloudflare dashboard)
+# None needed for frontend - API URL is in config.js

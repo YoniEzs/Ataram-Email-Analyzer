@@ -1,0 +1,30 @@
+# Render Blueprint for Ataram Email Analyzer Backend
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: ataram-email-analyzer-api
+    runtime: python
+    pythonVersion: 3.11.0
+    region: frankfurt  # or oregon, singapore - choose closest to your users
+    plan: free  # or starter for production
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 run:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ABUSEIPDB_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: CORS_ORIGINS
+        value: https://ataram.uk,https://email-analyzer.pages.dev,https://ataram-email-analyzer.pages.dev
+      - key: ENABLE_WHOIS
+        value: true
+      - key: ENABLE_ABUSEIPDB
+        value: true
+    healthCheckPath: /health
+    autoDeploy: true
