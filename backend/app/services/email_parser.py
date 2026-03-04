@@ -78,6 +78,16 @@ class EmailParserService:
         """Parse EML format email"""
         msg = BytesParser(policy=policy.default).parsebytes(data)
 
+        # Some Outlook EML files wrap the real email inside a message/rfc822 MIME part.
+        # If key headers are missing at the top level, unwrap the inner message.
+        if not msg.get("From") and not msg.get("Subject"):
+            for part in msg.walk():
+                if part.get_content_type() == "message/rfc822":
+                    payload = part.get_payload()
+                    if isinstance(payload, list) and payload:
+                        msg = payload[0]
+                        break
+
         def h(name: str) -> str:
             return self.decode_header(msg.get(name, ""))
 
