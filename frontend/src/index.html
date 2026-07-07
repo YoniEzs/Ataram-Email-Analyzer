@@ -86,8 +86,28 @@
                 <div id="progressBar" class="progress-bar" style="display: none;">
                     <div class="progress-bar-fill"></div>
                     <p class="progress-text">Analyzing email...</p>
+                    <p id="progressStep" style="text-align:center; font-size:0.8rem; color:var(--text-muted); margin-top:0.3rem;"></p>
                 </div>
             </section>
+
+            <!-- Recent Analysis History -->
+            <section id="historySection" class="card" style="margin-bottom:1.5rem; display:none;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                    <h3 style="margin:0;">Recent Analyses</h3>
+                    <button id="clearHistoryBtn" class="btn btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.8rem;">Clear</button>
+                </div>
+                <p id="historyDisclosure" style="margin:0 0 1rem; font-size:0.8rem; color:var(--text-muted);">
+                    History is saved only in this browser's local storage and includes filename, risk score, and verdict summary. Use Clear to remove it.
+                </p>
+                <div id="historyList">
+                    <p style="text-align:center; color:var(--text-muted);">No previous analyses.</p>
+                </div>
+            </section>
+
+            <!-- Export Bar -->
+            <div id="exportBar" style="display:none; text-align:right; margin-bottom:1rem;">
+                <button id="downloadReportBtn" class="btn btn-secondary">Download Report (JSON)</button>
+            </div>
 
             <!-- Results Section -->
             <section id="resultsSection" class="results-section" style="display: none;">

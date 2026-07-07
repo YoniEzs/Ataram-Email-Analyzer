@@ -4,36 +4,43 @@ Analyzes URLs found in emails for suspicious characteristics
 """
 
 import re
+import logging
 import urllib.parse
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+# Trailing punctuation that belongs to surrounding prose, not the URL itself
+_TRAILING_JUNK = re.compile(r'[.,;:!?)>\]]+$')
 
 
 class URLAnalyzerService:
     """Service for analyzing URLs in email content"""
 
-    # Suspicious TLDs often used in phishing
     SUSPICIOUS_TLDS = {
         'cn', 'ru', 'zip', 'top', 'biz', 'tk', 'ga', 'ml', 'cf', 'gq',
-        'xyz', 'ng', 'work', 'asia', 'club', 'link', 'click', 'download'
+        'xyz', 'ng', 'work', 'asia', 'club', 'link', 'click', 'download',
     }
 
-    # Known URL shorteners
     URL_SHORTENERS = {
         'bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'buff.ly',
-        'bit.do', 'cutt.ly', 'is.gd', 'tiny.cc', 'rb.gy', 'shorturl.at'
+        'bit.do', 'cutt.ly', 'is.gd', 'tiny.cc', 'rb.gy', 'shorturl.at',
     }
 
     def __init__(self):
-        self.url_pattern = re.compile(r'https?://[\w./?=#@%&+-]+', re.IGNORECASE)
+        # Broader pattern: stop at whitespace or HTML tag/attribute boundaries
+        # The old r'https?://[\w./?=#@%&+-]+' had an unintentional '+' to '-'
+        # character-class range that included ',' and missed many valid URL chars.
+        self.url_pattern = re.compile(r'https?://[^\s<>"\')\]]+', re.IGNORECASE)
 
     def extract_urls(self, text: str) -> List[str]:
-        """Extract all URLs from text"""
+        """Extract all URLs from text, stripping trailing prose punctuation."""
         if not text:
             return []
-        return self.url_pattern.findall(text)
+        return [_TRAILING_JUNK.sub('', u) for u in self.url_pattern.findall(text)]
 
     def analyze_single_url(self, url: str, sender_domain: Optional[str] = None) -> Dict[str, Any]:
-        """Analyze a single URL for suspicious characteristics"""
+        """Analyze a single URL for suspicious characteristics."""
         issues = []
         domain = ""
         registered_domain = ""
@@ -41,55 +48,47 @@ class URLAnalyzerService:
         try:
             parsed = urllib.parse.urlparse(url)
             domain = parsed.hostname or ""
-        except Exception:
-            domain = ""
+        except Exception as e:
+            logger.debug('[URLAnalyzerService] URL parse error for %r: %s', url, e)
 
         if domain:
             parts = domain.lower().split('.')
             registered_domain = '.'.join(parts[-2:]) if len(parts) >= 2 else domain.lower()
 
-        # Check for URL shortener
         if registered_domain in self.URL_SHORTENERS:
             issues.append('shortened_url')
 
-        # Check for IP address instead of domain
         if re.fullmatch(r'\d{1,3}(?:\.\d{1,3}){3}', domain or ''):
             issues.append('ip_address_host')
 
-        # Check for punycode (IDN homograph attack)
         if domain.startswith('xn--'):
             issues.append('punycode_domain')
 
-        # Check for suspicious TLD
         if registered_domain:
             tld = registered_domain.split('.')[-1]
             if tld in self.SUSPICIOUS_TLDS:
                 issues.append('suspicious_tld')
 
-        # Check for @ in URL (credential stealing)
+        # Credential-stealing pattern: user@host in authority
         try:
-            authority = url.split('/')[2]
+            authority = url.split('/')[2] if '/' in url[8:] else url[8:]
             if '@' in authority:
                 issues.append('url_contains_at_sign')
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug('[URLAnalyzerService] Authority parse error: %s', e)
 
-        # Check for excessively long path
         try:
             if parsed.path and len(parsed.path) > 80:
                 issues.append('long_path')
         except Exception:
             pass
 
-        # Check for redirect parameters
         if any(param in url.lower() for param in ['redirect=', 'url=', 'next=', 'goto=']):
             issues.append('redirect_parameter')
 
-        # Check for domain mismatch with sender
         if sender_domain and registered_domain and sender_domain.lower() != registered_domain:
             issues.append('domain_mismatch_with_sender')
 
-        # Check for suspicious query parameters
         if parsed.query:
             suspicious_params = ['cmd=', 'exec=', 'shell=', 'token=', 'key=']
             if any(param in parsed.query.lower() for param in suspicious_params):
@@ -99,22 +98,15 @@ class URLAnalyzerService:
             'url': url,
             'domain': registered_domain or domain,
             'issues': issues,
-            'is_suspicious': len(issues) > 0
+            'is_suspicious': len(issues) > 0,
         }
 
     def analyze_urls(self, urls: List[str], sender_domain: Optional[str] = None) -> Dict[str, Any]:
-        """Analyze multiple URLs"""
+        """Analyze multiple URLs."""
         if not urls:
-            return {
-                'total_count': 0,
-                'unique_count': 0,
-                'suspicious_count': 0,
-                'urls': []
-            }
+            return {'total_count': 0, 'unique_count': 0, 'suspicious_count': 0, 'urls': []}
 
-        # Remove duplicates while preserving order
         unique_urls = list(dict.fromkeys(urls))
-
         analyzed = []
         suspicious_count = 0
 
@@ -128,5 +120,5 @@ class URLAnalyzerService:
             'total_count': len(urls),
             'unique_count': len(unique_urls),
             'suspicious_count': suspicious_count,
-            'urls': analyzed
+            'urls': analyzed,
         }

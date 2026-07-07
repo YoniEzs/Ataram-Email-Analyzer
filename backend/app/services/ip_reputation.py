@@ -3,7 +3,11 @@ IP Reputation Service
 Checks IP addresses against reputation databases
 """
 
+import logging
 from typing import Optional, Dict, Any
+from app.utils.cache import cache_get, cache_set
+
+logger = logging.getLogger(__name__)
 
 try:
     import requests
@@ -34,6 +38,10 @@ class IPReputationService:
         if not ip or not self.api_key:
             return None
 
+        cached = cache_get(f"ip:{ip}")
+        if cached is not None:
+            return cached
+
         try:
             url = "https://api.abuseipdb.com/api/v2/check"
             params = {
@@ -55,7 +63,7 @@ class IPReputationService:
             response.raise_for_status()
 
             data = response.json().get('data', {})
-            return {
+            result = {
                 'ipAddress': data.get('ipAddress'),
                 'abuseConfidenceScore': data.get('abuseConfidenceScore'),
                 'totalReports': data.get('totalReports'),
@@ -68,5 +76,8 @@ class IPReputationService:
                 'countryCode': data.get('countryCode'),
                 'countryName': data.get('countryName'),
             }
-        except Exception:
+            cache_set(f"ip:{ip}", result, 21600)
+            return result
+        except Exception as e:
+            logger.warning(f"[IPReputationService] AbuseIPDB check failed for {ip}: {e}")
             return None

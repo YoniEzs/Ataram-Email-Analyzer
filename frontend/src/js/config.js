@@ -6,7 +6,7 @@ const CONFIG = {
     // API endpoint - change this to your backend URL
     API_BASE_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:5000'
-        : 'https://ataram-email-analyzer.onrender.com',  // Your Render backend URL
+        : 'https://ataram-email-analyzer-api.onrender.com',
 
     // Endpoints
     ENDPOINTS: {

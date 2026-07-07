@@ -11,7 +11,7 @@ RESTful API backend for email security analysis built with Flask.
 - 🔗 URL and attachment analysis
 - 📈 Risk scoring algorithm
 - 🐳 Docker support
-- ✅ Full test coverage
+- ✅ Test suite with focused coverage on core analyzers and API contracts
 
 ## Technology Stack
 
@@ -30,7 +30,8 @@ RESTful API backend for email security analysis built with Flask.
 ```bash
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
+# Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -74,7 +75,33 @@ curl -X POST http://localhost:5000/api/analyze \
   -F "abuseipdb_key=your_key"
 ```
 
-**Response:** JSON with comprehensive analysis results
+**Response example:**
+```json
+{
+  "timestamp": "2026-03-09T12:00:00",
+  "routing_forensics": {
+    "public_ips": ["93.184.216.34"],
+    "hop_count": 5,
+    "originating_ip": "93.184.216.34",
+    "timezone_offset": "+0000"
+  },
+  "risk_assessment": {
+    "score": 75,
+    "level": "high",
+    "verdict": "SUSPICIOUS - Exercise extreme caution",
+    "whitelist_applied": false
+  },
+  "metadata": {
+    "filename": "sample.eml",
+    "analyzed_at": "2026-03-09T12:00:00",
+    "version": "2.0"
+  }
+}
+```
+
+`risk_assessment.whitelist_applied` is set to `true` when the sender domain is
+in `WHITELIST_DOMAINS` and SPF passes. The whitelist only gives a small
+discount to otherwise low-risk mail; it does not cap high or critical scores.
 
 ### GET /health
 
@@ -175,6 +202,7 @@ result = analyzer.analyze_urls(urls, sender_domain)
 | `ENABLE_ABUSEIPDB` | Enable IP reputation | true |
 | `DNS_TIMEOUT` | DNS query timeout (seconds) | 5 |
 | `WHOIS_TIMEOUT` | WHOIS timeout (seconds) | 10 |
+| `WHITELIST_DOMAINS` | Comma-separated trusted domains for a low-risk score discount | Empty |
 | `LOG_LEVEL` | Logging level | INFO |
 
 ## Testing

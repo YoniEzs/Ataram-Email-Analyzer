@@ -12,8 +12,9 @@ load_dotenv(os.path.join(basedir, '..', '.env'))
 class Config:
     """Base configuration"""
 
-    # Security
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+    # No hardcoded fallback — validated at startup in create_app()
+    # Generate a key: python -c "import secrets; print(secrets.token_hex(32))"
+    SECRET_KEY = os.environ.get('SECRET_KEY')
 
     # API Keys
     ABUSEIPDB_KEY = os.environ.get('ABUSEIPDB_KEY')
@@ -24,10 +25,12 @@ class Config:
     HOST = os.environ.get('HOST', '0.0.0.0')
 
     # CORS
-    CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:3000,https://ataram.uk,https://ataram-email-analyzer-i3q5.onrender.com').split(',')
+    CORS_ORIGINS = os.environ.get(
+        'CORS_ORIGINS', 'http://localhost:3000,https://ataram.uk'
+    ).split(',')
 
     # File upload
-    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB max file size
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_ALLOWED_EXTENSIONS = {'eml', 'msg'}
 
     # YARA Rules
@@ -42,10 +45,21 @@ class Config:
     WHOIS_TIMEOUT = int(os.environ.get('WHOIS_TIMEOUT', 10))
     HTTP_TIMEOUT = int(os.environ.get('HTTP_TIMEOUT', 10))
 
-    # Features (can be disabled for performance)
+    # Features
     ENABLE_WHOIS = os.environ.get('ENABLE_WHOIS', 'true').lower() == 'true'
     ENABLE_ABUSEIPDB = os.environ.get('ENABLE_ABUSEIPDB', 'true').lower() == 'true'
     ENABLE_VIRUSTOTAL = os.environ.get('ENABLE_VIRUSTOTAL', 'false').lower() == 'true'
+
+    # Trusted sender domain whitelist — empty by default.
+    # The old default included gmail.com/outlook.com/etc., which are frequently
+    # spoofed in phishing campaigns. Whitelisting now only gives a small discount
+    # to otherwise low-risk mail and never suppresses high-risk evidence.
+    # Set via env var: WHITELIST_DOMAINS=yourdomain.com,partner.com
+    WHITELIST_DOMAINS = [
+        d.strip()
+        for d in os.environ.get('WHITELIST_DOMAINS', '').split(',')
+        if d.strip()
+    ]
 
     # Logging
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
@@ -64,14 +78,15 @@ class ProductionConfig(Config):
 
 
 class TestingConfig(Config):
-    """Testing configuration"""
+    """Testing configuration — safe ephemeral key, no external calls expected"""
     DEBUG = False
     TESTING = True
+    SECRET_KEY = 'test-secret-key-not-for-production'
 
 
 config = {
     'development': DevelopmentConfig,
     'production': ProductionConfig,
     'testing': TestingConfig,
-    'default': DevelopmentConfig
+    'default': DevelopmentConfig,
 }

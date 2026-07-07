@@ -28,6 +28,7 @@ class ResultsRenderer {
                 ${this.renderURLs(data.urls)}
                 ${this.renderAttachments(data.attachments)}
                 ${this.renderRouting(data.routing)}
+                ${this.renderHeaderForensics(data.routing_forensics)}
             </div>
         `;
 
@@ -423,6 +424,46 @@ class ResultsRenderer {
                     <h3 class="result-card-title">Email Routing (${routing.hop_count} hops)</h3>
                 </div>
                 <div class="hops-list">${hopItems}</div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render header forensics card
+     */
+    renderHeaderForensics(forensics) {
+        if (!forensics || forensics.hop_count === 0) return '';
+
+        const ipBadges = forensics.public_ips && forensics.public_ips.length > 0
+            ? forensics.public_ips.map(ip => `<span class="pill info">${this.escapeHtml(ip)}</span>`).join(' ')
+            : '<span class="muted">None detected</span>';
+
+        return `
+            <div class="result-card">
+                <div class="result-card-header">
+                    <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                    </svg>
+                    <h3 class="result-card-title">Header Forensics</h3>
+                </div>
+                <table class="data-table">
+                    <tr>
+                        <th>Hop Count</th>
+                        <td>${forensics.hop_count}</td>
+                    </tr>
+                    <tr>
+                        <th>Originating IP</th>
+                        <td>${forensics.originating_ip ? `<code>${this.escapeHtml(forensics.originating_ip)}</code>` : '<span class="muted">Not detected</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Sender Timezone</th>
+                        <td>${forensics.timezone_offset ? `<code>${this.escapeHtml(forensics.timezone_offset)}</code>` : '<span class="muted">Not found</span>'}</td>
+                    </tr>
+                    <tr>
+                        <th>Public IPs in Route</th>
+                        <td>${ipBadges}</td>
+                    </tr>
+                </table>
             </div>
         `;
     }

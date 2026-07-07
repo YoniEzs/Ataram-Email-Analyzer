@@ -9,13 +9,20 @@ class UIController {
             fileInput: document.getElementById('fileInput'),
             apiKeyInput: document.getElementById('apiKeyInput'),
             progressBar: document.getElementById('progressBar'),
+            progressStep: document.getElementById('progressStep'),
             resultsSection: document.getElementById('resultsSection'),
             errorSection: document.getElementById('errorSection'),
             errorMessage: document.getElementById('errorMessage'),
-            retryButton: document.getElementById('retryButton')
+            retryButton: document.getElementById('retryButton'),
+            exportBar: document.getElementById('exportBar'),
+            downloadReportBtn: document.getElementById('downloadReportBtn'),
+            historySection: document.getElementById('historySection'),
+            historyList: document.getElementById('historyList'),
+            clearHistoryBtn: document.getElementById('clearHistoryBtn')
         };
 
         this.currentFile = null;
+        this._progressInterval = null;
     }
 
     /**
@@ -23,6 +30,10 @@ class UIController {
      */
     initDragAndDrop() {
         const { dropZone, fileInput } = this.elements;
+        if (!dropZone || !fileInput) {
+            console.warn('Upload UI elements not found; drag-and-drop disabled.');
+            return;
+        }
 
         // Prevent default drag behaviors
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
@@ -73,7 +84,6 @@ class UIController {
      * @param {File} file - Selected file
      */
     handleFileSelection(file) {
-        // Validate file
         const validation = this.validateFile(file);
         if (!validation.valid) {
             this.showError(validation.error);
@@ -90,12 +100,10 @@ class UIController {
      * @returns {Object} Validation result
      */
     validateFile(file) {
-        // Check if file exists
         if (!file) {
             return { valid: false, error: 'No file selected' };
         }
 
-        // Check file size
         if (file.size > CONFIG.MAX_FILE_SIZE) {
             return {
                 valid: false,
@@ -103,7 +111,6 @@ class UIController {
             };
         }
 
-        // Check file extension
         const extension = file.name.split('.').pop().toLowerCase();
         if (!CONFIG.ALLOWED_EXTENSIONS.includes(extension)) {
             return {
@@ -125,7 +132,7 @@ class UIController {
             this.hideError();
             this.hideResults();
 
-            const apiKey = this.elements.apiKeyInput.value.trim();
+            const apiKey = this.elements.apiKeyInput ? this.elements.apiKeyInput.value.trim() : '';
             const results = await window.api.analyzeEmail(file, apiKey);
 
             this.hideProgress();
@@ -138,18 +145,49 @@ class UIController {
     }
 
     /**
-     * Show progress bar
+     * Show progress bar with animated step indicator
      */
     showProgress() {
+        const steps = [
+            'Parsing email...',
+            'Checking DNS records...',
+            'Looking up domain info...',
+            'Checking IP reputation...',
+            'Analyzing content & URLs...',
+            'Calculating risk score...'
+        ];
+
+        if (!this.elements.progressBar) return;
         this.elements.progressBar.style.display = 'block';
+        if (this.elements.progressStep) {
+            this.elements.progressStep.textContent = steps[0];
+        }
+
+        let stepIndex = 0;
+        this._progressInterval = setInterval(() => {
+            stepIndex = (stepIndex + 1) % steps.length;
+            if (this.elements.progressStep) {
+                this.elements.progressStep.textContent = steps[stepIndex];
+            }
+        }, 1500);
+
         this.scrollToElement(this.elements.progressBar);
     }
 
     /**
-     * Hide progress bar
+     * Hide progress bar and stop step animation
      */
     hideProgress() {
-        this.elements.progressBar.style.display = 'none';
+        if (this._progressInterval) {
+            clearInterval(this._progressInterval);
+            this._progressInterval = null;
+        }
+        if (this.elements.progressBar) {
+            this.elements.progressBar.style.display = 'none';
+        }
+        if (this.elements.progressStep) {
+            this.elements.progressStep.textContent = '';
+        }
     }
 
     /**
@@ -157,8 +195,23 @@ class UIController {
      * @param {Object} results - Analysis results
      */
     showResults(results) {
-        window.resultsRenderer.render(results);
-        this.elements.resultsSection.style.display = 'block';
+        if (window.resultsRenderer && typeof window.resultsRenderer.render === 'function') {
+            window.resultsRenderer.render(results);
+        }
+        if (this.elements.resultsSection) {
+            this.elements.resultsSection.style.display = 'block';
+        }
+
+        // Store for JSON export
+        window.lastAnalysisResult = results;
+        if (this.elements.exportBar) {
+            this.elements.exportBar.style.display = 'block';
+        }
+
+        // Save to history and refresh history panel
+        this.saveToHistory(results, this.currentFile ? this.currentFile.name : 'unknown');
+        this.renderHistory();
+
         this.scrollToElement(this.elements.resultsSection);
     }
 
@@ -166,7 +219,12 @@ class UIController {
      * Hide results
      */
     hideResults() {
-        this.elements.resultsSection.style.display = 'none';
+        if (this.elements.resultsSection) {
+            this.elements.resultsSection.style.display = 'none';
+        }
+        if (this.elements.exportBar) {
+            this.elements.exportBar.style.display = 'none';
+        }
     }
 
     /**
@@ -174,6 +232,7 @@ class UIController {
      * @param {string} message - Error message
      */
     showError(message) {
+        if (!this.elements.errorSection || !this.elements.errorMessage) return;
         this.elements.errorMessage.textContent = message;
         this.elements.errorSection.style.display = 'block';
         this.scrollToElement(this.elements.errorSection);
@@ -183,7 +242,9 @@ class UIController {
      * Hide error message
      */
     hideError() {
-        this.elements.errorSection.style.display = 'none';
+        if (this.elements.errorSection) {
+            this.elements.errorSection.style.display = 'none';
+        }
     }
 
     /**
@@ -191,6 +252,7 @@ class UIController {
      * @param {HTMLElement} element - Element to scroll to
      */
     scrollToElement(element) {
+        if (!element) return;
         setTimeout(() => {
             element.scrollIntoView({
                 behavior: 'smooth',
@@ -203,12 +265,134 @@ class UIController {
      * Initialize retry button
      */
     initRetryButton() {
+        if (!this.elements.retryButton) return;
         this.elements.retryButton.addEventListener('click', () => {
             this.hideError();
             if (this.currentFile) {
                 this.analyzeFile(this.currentFile);
             }
         });
+    }
+
+    /**
+     * Initialize the JSON download button
+     */
+    initDownloadButton() {
+        if (!this.elements.downloadReportBtn) return;
+
+        this.elements.downloadReportBtn.addEventListener('click', () => {
+            const result = window.lastAnalysisResult;
+            if (!result) return;
+
+            const json = JSON.stringify(result, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `email-analysis-${timestamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    }
+
+    /**
+     * Save analysis result summary to localStorage history (max 10 entries)
+     * @param {Object} result - Analysis result
+     * @param {string} filename - Email filename
+     */
+    saveToHistory(result, filename) {
+        const entry = {
+            filename: filename,
+            analyzed_at: new Date().toISOString(),
+            risk_level: result.risk_assessment ? result.risk_assessment.level : 'unknown',
+            risk_score: result.risk_assessment ? result.risk_assessment.score : 0,
+            verdict: result.risk_assessment ? result.risk_assessment.verdict : ''
+        };
+
+        let history = this.loadHistory();
+        history.unshift(entry);
+        history = history.slice(0, 10);
+
+        try {
+            localStorage.setItem('emailAnalyzer_history', JSON.stringify(history));
+        } catch (e) {
+            // localStorage quota exceeded or unavailable — silently skip
+        }
+    }
+
+    /**
+     * Load analysis history from localStorage
+     * @returns {Array} History entries
+     */
+    loadHistory() {
+        try {
+            const raw = localStorage.getItem('emailAnalyzer_history');
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    /**
+     * Render history list in the history section
+     */
+    renderHistory() {
+        const list = this.elements.historyList;
+        const section = this.elements.historySection;
+        if (!list || !section) return;
+
+        const history = this.loadHistory();
+
+        if (history.length === 0) {
+            list.innerHTML = '<p style="text-align:center; color:var(--text-muted);">No previous analyses.</p>';
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+
+        const levelClass = { critical: 'danger', high: 'warning', medium: 'info', low: 'success' };
+        list.innerHTML = history.map(entry => {
+            const cls = levelClass[entry.risk_level] || 'info';
+            const date = new Date(entry.analyzed_at).toLocaleString();
+            return `
+                <div style="display:flex; align-items:center; gap:0.75rem; padding:0.6rem 0; border-bottom:1px solid var(--border-color);">
+                    <span class="pill ${cls}" style="min-width:70px; text-align:center;">${this._escapeHtml(entry.risk_level || 'unknown')}</span>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this._escapeHtml(entry.filename)}</div>
+                        <div style="font-size:0.75rem; color:var(--text-muted);">${date}</div>
+                    </div>
+                    <span style="font-weight:600; color:var(--text-secondary);">${entry.risk_score}/100</span>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Initialize history section: render on load and wire clear button
+     */
+    initHistory() {
+        this.renderHistory();
+
+        if (this.elements.clearHistoryBtn) {
+            this.elements.clearHistoryBtn.addEventListener('click', () => {
+                localStorage.removeItem('emailAnalyzer_history');
+                this.renderHistory();
+            });
+        }
+    }
+
+    /**
+     * Escape HTML for safe display
+     */
+    _escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 }
 

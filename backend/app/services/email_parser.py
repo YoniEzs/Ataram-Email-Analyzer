@@ -4,13 +4,15 @@ Handles parsing of EML and MSG files
 """
 
 import io
-import os
+import logging
 import mimetypes
-from typing import Dict, Any, List, Tuple, Optional
+import os
 from email import policy
-from email.parser import BytesParser
 from email.header import decode_header, make_header
-from email.utils import parseaddr
+from email.parser import BytesParser
+from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 
 class EmailParserService:
@@ -78,15 +80,17 @@ class EmailParserService:
         """Parse EML format email"""
         msg = BytesParser(policy=policy.default).parsebytes(data)
 
-        # Some Outlook EML files wrap the real email inside a message/rfc822 MIME part.
-        # If key headers are missing at the top level, unwrap the inner message.
-        if not msg.get("From") and not msg.get("Subject"):
+        # Outlook can export an EML whose top-level entity is only a
+        # message/rfc822 container. Analyze the enclosed message when the
+        # wrapper itself has no useful message headers.
+        if not msg.get('From') and not msg.get('Subject'):
             for part in msg.walk():
-                if part.get_content_type() == "message/rfc822":
-                    payload = part.get_payload()
-                    if isinstance(payload, list) and payload:
-                        msg = payload[0]
-                        break
+                if part.get_content_type() != 'message/rfc822':
+                    continue
+                payload = part.get_payload()
+                if isinstance(payload, list) and payload:
+                    msg = payload[0]
+                    break
 
         def h(name: str) -> str:
             return self.decode_header(msg.get(name, ""))
@@ -182,13 +186,13 @@ class EmailParserService:
                 if ctype == "text/plain":
                     try:
                         parts["plain"].append(part.get_content())
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"[EmailParserService] Failed to decode text/plain part: {e}")
                 elif ctype == "text/html":
                     try:
                         parts["html"].append(part.get_content())
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.debug(f"[EmailParserService] Failed to decode text/html part: {e}")
         else:
             ctype = msg.get_content_type()
             if ctype == "text/plain":
@@ -240,7 +244,7 @@ class EmailParserService:
                     'extension': ext,
                     'size': len(data_b)
                 })
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[EmailParserService] Failed to extract MSG attachment: {e}")
 
         return attachments

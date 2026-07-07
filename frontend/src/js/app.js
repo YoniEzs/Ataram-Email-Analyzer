@@ -8,6 +8,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize UI controller
     window.uiController.initDragAndDrop();
     window.uiController.initRetryButton();
+    window.uiController.initDownloadButton();
+    window.uiController.initHistory();
 
     // Check API health on load
     checkAPIHealth();

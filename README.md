@@ -81,7 +81,8 @@ Comprehensive email analysis tool for detecting phishing, malware, and malicious
    ```bash
    cd backend
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   source venv/bin/activate
+   # On Windows: venv\Scripts\activate
    pip install -r requirements.txt
    ```
 
@@ -118,31 +119,29 @@ Comprehensive email analysis tool for detecting phishing, malware, and malicious
 
 ```
 email-analyzer/
-├── backend/                 # Flask API backend
-│   ├── app/
-│   │   ├── api/            # API endpoints
-│   │   ├── services/       # Business logic
-│   │   ├── models/         # Data models
-│   │   ├── utils/          # Utilities
-│   │   ├── __init__.py     # App factory
-│   │   └── config.py       # Configuration
-│   ├── run.py              # Entry point
-│   ├── requirements.txt    # Dependencies
-│   ├── Dockerfile          # Docker config
-│   └── .env.example        # Environment template
-│
-├── frontend/               # Web interface
-│   ├── src/
-│   │   ├── index.html      # Main HTML
-│   │   ├── css/            # Stylesheets
-│   │   ├── js/             # JavaScript
-│   │   └── assets/         # Images, icons
-│   ├── Dockerfile          # Docker config
-│   └── nginx.conf          # Nginx config
-│
-├── docker-compose.yml      # Docker orchestration
-├── .env.example            # Environment template
-└── README.md               # This file
+|-- backend/                      # Flask API backend
+|   |-- app/
+|   |   |-- api/                 # API endpoints
+|   |   |-- services/            # Analysis services
+|   |   |-- utils/               # Validation/extraction/cache utilities
+|   |   |-- __init__.py          # App factory
+|   |   `-- config.py            # Configuration
+|   |-- tests/                   # Backend and contract tests
+|   |-- run.py                   # Entry point
+|   |-- requirements.txt         # Dependencies
+|   |-- .env.example             # Environment template
+|   `-- Dockerfile               # Docker config
+|-- frontend/                    # Web interface
+|   |-- src/
+|   |   |-- index.html           # Main HTML
+|   |   |-- css/                 # Stylesheets
+|   |   |-- js/                  # JavaScript
+|   |   `-- assets/              # Images/icons
+|   |-- Dockerfile
+|   |-- nginx.conf
+|   `-- wrangler.toml
+|-- render.yaml                  # Render deployment config
+`-- README.md                    # This file
 ```
 
 ### Architecture
@@ -243,16 +242,17 @@ Analyze an email file.
 **Response:**
 ```json
 {
-  "timestamp": "2024-01-01T12:00:00",
+  "timestamp": "2026-03-09T12:00:00",
   "risk_assessment": {
     "score": 75,
     "level": "high",
-    "verdict": "SUSPICIOUS - Exercise extreme caution"
+    "verdict": "SUSPICIOUS - Exercise extreme caution",
+    "whitelist_applied": false
   },
   "headers": {
     "sender": "sender@example.com",
     "subject": "Email subject",
-    ...
+    "date": "Mon, 09 Mar 2026 09:00:00 +0000"
   },
   "authentication": {
     "spf": "v=spf1 ...",
@@ -263,13 +263,28 @@ Analyze an email file.
       "dmarc": "pass"
     }
   },
+  "routing_forensics": {
+    "public_ips": ["93.184.216.34"],
+    "hop_count": 5,
+    "originating_ip": "93.184.216.34",
+    "timezone_offset": "+0000"
+  },
   "urls": {
     "total_count": 5,
     "suspicious_count": 2,
-    "urls": [...]
+    "urls": []
   },
-  "attachments": {...},
-  "suspicions": [...]
+  "attachments": {
+    "total_count": 1,
+    "suspicious_count": 0,
+    "attachments": []
+  },
+  "suspicions": [],
+  "metadata": {
+    "filename": "sample.eml",
+    "analyzed_at": "2026-03-09T12:00:00",
+    "version": "2.0"
+  }
 }
 ```
 

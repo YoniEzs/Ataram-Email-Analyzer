@@ -4,7 +4,10 @@ Analyzes email content for phishing indicators
 """
 
 import re
+import logging
 from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 try:
     from bs4 import BeautifulSoup
@@ -162,7 +165,8 @@ class ContentAnalyzerService:
                             'actual': href_domain
                         })
 
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[ContentAnalyzerService] HTML parsing failed: {e}")
             pass
 
         return {

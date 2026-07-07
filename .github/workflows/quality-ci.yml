@@ -1,0 +1,32 @@
+name: Repository Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  whitespace:
+    name: Whitespace diff check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check committed whitespace
+        shell: bash
+        run: |
+          if [[ '${{ github.event_name }}' == 'pull_request' ]]; then
+            git diff --check HEAD^1 HEAD
+          elif git rev-parse --verify '${{ github.event.before }}' >/dev/null 2>&1; then
+            git diff --check '${{ github.event.before }}' '${{ github.sha }}'
+          else
+            git diff --check HEAD^ HEAD
+          fi

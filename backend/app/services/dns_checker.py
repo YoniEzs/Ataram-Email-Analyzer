@@ -4,7 +4,11 @@ Handles SPF, DMARC, and DKIM DNS queries
 """
 
 import re
+import logging
 from typing import Optional, List
+from app.utils.cache import cache_get, cache_set
+
+logger = logging.getLogger(__name__)
 
 try:
     import dns.resolver
@@ -24,6 +28,10 @@ class DNSCheckerService:
 
     def get_txt_records(self, domain: str) -> Optional[List[str]]:
         """Query TXT records for a domain"""
+        cached = cache_get(f"dns:{domain}")
+        if cached is not None:
+            return cached
+
         try:
             answers = dns.resolver.resolve(domain, 'TXT', lifetime=self.timeout)
             records = []
@@ -33,10 +41,13 @@ class DNSCheckerService:
                 if txt.startswith('"') and txt.endswith('"'):
                     txt = txt[1:-1]
                 records.append(txt)
-            return records if records else None
+            result = records if records else None
+            cache_set(f"dns:{domain}", result, 3600)
+            return result
         except dns.exception.DNSException:
             return None
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[DNSCheckerService] Unexpected DNS error for {domain}: {e}")
             return None
 
     def check_spf(self, domain: str) -> Optional[str]:
