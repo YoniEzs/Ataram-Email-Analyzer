@@ -44,6 +44,7 @@ class URLAnalyzerService:
         issues = []
         domain = ""
         registered_domain = ""
+        parsed = None
 
         try:
             parsed = urllib.parse.urlparse(url)
@@ -77,11 +78,8 @@ class URLAnalyzerService:
         except Exception as e:
             logger.debug('[URLAnalyzerService] Authority parse error: %s', e)
 
-        try:
-            if parsed.path and len(parsed.path) > 80:
-                issues.append('long_path')
-        except Exception:
-            pass
+        if parsed and parsed.path and len(parsed.path) > 80:
+            issues.append('long_path')
 
         if any(param in url.lower() for param in ['redirect=', 'url=', 'next=', 'goto=']):
             issues.append('redirect_parameter')
@@ -89,7 +87,7 @@ class URLAnalyzerService:
         if sender_domain and registered_domain and sender_domain.lower() != registered_domain:
             issues.append('domain_mismatch_with_sender')
 
-        if parsed.query:
+        if parsed and parsed.query:
             suspicious_params = ['cmd=', 'exec=', 'shell=', 'token=', 'key=']
             if any(param in parsed.query.lower() for param in suspicious_params):
                 issues.append('suspicious_parameters')

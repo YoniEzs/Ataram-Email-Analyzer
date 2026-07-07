@@ -8,9 +8,11 @@
 
 Comprehensive email analysis tool for detecting phishing, malware, and malicious content
 
+[![Backend CI](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/frontend-ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Flask](https://img.shields.io/badge/flask-3.0+-green.svg)](https://flask.palletsprojects.com/)
+[![Flask](https://img.shields.io/badge/flask-3.1+-green.svg)](https://flask.palletsprojects.com/)
 
 [Features](#features) •
 [Quick Start](#quick-start) •
@@ -49,17 +51,24 @@ Comprehensive email analysis tool for detecting phishing, malware, and malicious
 
 ## 🚀 Quick Start
 
-### Deploy to Production (Recommended)
+### Run with Docker Compose (Easiest)
+
+```bash
+git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
+cd Ataram-Email-Analyzer
+cp .env.example .env
+# Set SECRET_KEY in .env:
+#   python -c "import secrets; print(secrets.token_hex(32))"
+docker compose up --build
+```
+
+Then open http://localhost:3000 — the API runs at http://localhost:5000.
+
+### Deploy to Production
 
 **🎯 [Follow detailed deployment guide](CLOUDFLARE_RENDER_DEPLOYMENT.md)**
 
-1. **Push to GitHub**
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git push
-   ```
+1. **Fork or push this repo to GitHub**
 
 2. **Deploy Backend to Render** ([render.com](https://render.com))
    - Create Web Service from GitHub
@@ -69,7 +78,7 @@ Comprehensive email analysis tool for detecting phishing, malware, and malicious
 3. **Deploy Frontend to Cloudflare Pages** ([dash.cloudflare.com](https://dash.cloudflare.com))
    - Create Pages project from GitHub
    - Build output: `frontend/src`
-   - Add custom domain: `ataram.uk`
+   - Add your custom domain
 
 ### Test Locally
 
@@ -140,6 +149,7 @@ email-analyzer/
 |   |-- Dockerfile
 |   |-- nginx.conf
 |   `-- wrangler.toml
+|-- docker-compose.yml           # One-command self-hosted deployment
 |-- render.yaml                  # Render deployment config
 `-- README.md                    # This file
 ```
@@ -173,8 +183,10 @@ email-analyzer/
 | `ABUSEIPDB_KEY` | AbuseIPDB API key | - | Optional |
 | `PORT` | Backend port | 5000 | No |
 | `CORS_ORIGINS` | Allowed CORS origins | localhost | No |
+| `FORCE_HTTPS` | Redirect HTTP → HTTPS | true | No |
 | `ENABLE_WHOIS` | Enable WHOIS lookups | true | No |
 | `ENABLE_ABUSEIPDB` | Enable IP reputation | true | No |
+| `WHITELIST_DOMAINS` | Trusted sender domains | empty | No |
 
 ### Frontend Configuration
 
@@ -359,8 +371,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## 📧 Contact
 
 - Website: [ataram.uk](https://ataram.uk)
-- GitHub: [@ataram](https://github.com/ataram)
+- GitHub: [@YoniEzs](https://github.com/YoniEzs)
 - Email: support@ataram.uk
+
+Found a security issue? Please follow the [security policy](SECURITY.md) instead of opening a public issue.
 
 ---
 

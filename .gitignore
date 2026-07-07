@@ -83,3 +83,6 @@ build/
 *.pyc
 *.pyo
 *.pyd
+
+# Claude Code local settings
+.claude/settings.local.json

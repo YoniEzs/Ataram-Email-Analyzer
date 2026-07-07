@@ -36,6 +36,10 @@ class Config:
     # YARA Rules
     YARA_RULES_PATH = os.environ.get('YARA_RULES_PATH', 'yara_rules')
 
+    # HTTPS enforcement — disable only when serving plain HTTP on purpose
+    # (e.g. self-hosted docker-compose without a TLS-terminating proxy)
+    FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'true').lower() == 'true'
+
     # Rate limiting
     RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'true').lower() == 'true'
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', '100 per hour')

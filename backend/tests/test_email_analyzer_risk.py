@@ -2,7 +2,7 @@
 Tests for risk scoring and suspicion logic.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -16,7 +16,9 @@ def make_service(whitelist_domains=None):
 
 
 def whois_with_age(days_old):
-    created = (datetime.utcnow() - timedelta(days=days_old, hours=1)).replace(microsecond=0)
+    created = (
+        datetime.now(timezone.utc) - timedelta(days=days_old, hours=1)
+    ).replace(microsecond=0, tzinfo=None)
     return {"creation_date": created.isoformat()}
 
 
