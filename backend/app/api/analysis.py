@@ -61,12 +61,18 @@ def analyze_email():
                 'message': 'Only .eml and .msg files are supported',
             }), 400
 
-        # API key comes from form (BYOK) or server config — never logged
+        # API keys come from form (BYOK) or server config — never logged
         abuseipdb_key = None
         if current_app.config.get('ENABLE_ABUSEIPDB'):
             abuseipdb_key = (
                 request.form.get('abuseipdb_key')
                 or current_app.config.get('ABUSEIPDB_KEY')
+            )
+        virustotal_key = None
+        if current_app.config.get('ENABLE_VIRUSTOTAL'):
+            virustotal_key = (
+                request.form.get('virustotal_key')
+                or current_app.config.get('VIRUSTOTAL_API_KEY')
             )
 
         file_data = file.read()
@@ -89,6 +95,10 @@ def analyze_email():
             whitelist_domains=current_app.config.get('WHITELIST_DOMAINS', []),
             enable_whois=current_app.config.get('ENABLE_WHOIS', True),
             enable_abuseipdb=current_app.config.get('ENABLE_ABUSEIPDB', True),
+            enable_virustotal=current_app.config.get('ENABLE_VIRUSTOTAL', False),
+            virustotal_key=virustotal_key,
+            enable_auth_verification=current_app.config.get('ENABLE_AUTH_VERIFICATION', True),
+            yara_rules_path=current_app.config.get('YARA_RULES_PATH'),
             dns_timeout=current_app.config.get('DNS_TIMEOUT', 5),
             whois_timeout=current_app.config.get('WHOIS_TIMEOUT', 10),
             http_timeout=current_app.config.get('HTTP_TIMEOUT', 10),

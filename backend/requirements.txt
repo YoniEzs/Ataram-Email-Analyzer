@@ -16,6 +16,11 @@ tldextract==5.3.1
 # WHOIS
 python-whois==0.9.5
 
+# Detection engines (all optional at runtime — analyzers degrade gracefully)
+yara-python==4.5.4
+pyspf==2.0.14
+dkimpy==1.1.8
+
 # HTML Parsing
 beautifulsoup4==4.12.3
 lxml==6.1.0

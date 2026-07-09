@@ -3,7 +3,14 @@ Attachment Analyzer Service
 Analyzes email attachments for suspicious characteristics
 """
 
+import hashlib
+import io
+import logging
+import os
+import zipfile
 from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 # Unicode bidirectional control characters. U+202E (right-to-left override)
 # makes "annexe_‮fdp.exe" display as "annexe_exe.pdf"; legitimate
@@ -56,6 +63,39 @@ class AttachmentAnalyzerService:
         'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'iso', 'img',
         'cab',  # Windows Cabinet — used in dropper chains
     }
+
+    # Magic-byte signatures for formats attackers commonly masquerade as.
+    # Office OOXML formats are zip containers; legacy Office is OLE.
+    MAGIC_SIGNATURES = {
+        'pdf': (b'%PDF',),
+        'png': (b'\x89PNG',),
+        'jpg': (b'\xff\xd8\xff',),
+        'jpeg': (b'\xff\xd8\xff',),
+        'gif': (b'GIF8',),
+        'zip': (b'PK\x03\x04', b'PK\x05\x06'),
+        'docx': (b'PK\x03\x04',),
+        'xlsx': (b'PK\x03\x04',),
+        'pptx': (b'PK\x03\x04',),
+        'doc': (b'\xd0\xcf\x11\xe0',),
+        'xls': (b'\xd0\xcf\x11\xe0',),
+        'ppt': (b'\xd0\xcf\x11\xe0',),
+        'rar': (b'Rar!',),
+        '7z': (b'7z\xbc\xaf',),
+        'gz': (b'\x1f\x8b',),
+    }
+
+    # Content signatures that mark a file as executable no matter what the
+    # filename claims.
+    EXECUTABLE_MAGIC = (
+        b'MZ',                # Windows PE
+        b'\x7fELF',           # Linux ELF
+        b'#!',                # script with shebang
+        b'\xfe\xed\xfa\xce',  # Mach-O 32-bit
+        b'\xfe\xed\xfa\xcf',  # Mach-O 64-bit
+        b'\xcf\xfa\xed\xfe',  # Mach-O little-endian
+    )
+
+    _MAX_ARCHIVE_MEMBERS = 100
 
     def __init__(self):
         pass
@@ -148,16 +188,64 @@ class AttachmentAnalyzerService:
             issues.append('bidi_spoofed_filename')
             escalate('critical')
 
+        # Content inspection when raw bytes are available
+        data = attachment.get('data') or b''
+        sha256 = hashlib.sha256(data).hexdigest() if data else None
+        if data:
+            self._inspect_content(data, ext, issues, escalate)
+
         return {
             'filename': filename,
             'extension': ext,
             'content_type': content_type,
             'size': size,
             'size_formatted': self._format_size(size),
+            'sha256': sha256,
             'issues': issues,
             'severity': severity,
             'is_suspicious': len(issues) > 0,
         }
+
+    def _inspect_content(self, data: bytes, ext: str, issues: List[str], escalate) -> None:
+        """Compare actual file content against the claimed extension."""
+        # Executable content hiding behind a non-executable name
+        if data.startswith(self.EXECUTABLE_MAGIC) and ext not in self.EXECUTABLE_EXTENSIONS:
+            issues.append('executable_content_mismatch')
+            escalate('critical')
+
+        # Claimed a known format but the magic bytes disagree
+        expected = self.MAGIC_SIGNATURES.get(ext)
+        if expected and len(data) >= 8 and not data.startswith(expected):
+            issues.append('content_type_mismatch')
+            escalate('high')
+
+        # Peek inside zip containers (plain .zip only — OOXML documents are
+        # also zips but their members are document internals, not payloads)
+        if ext == 'zip' and data.startswith(b'PK'):
+            self._inspect_zip(data, issues, escalate)
+
+    def _inspect_zip(self, data: bytes, issues: List[str], escalate) -> None:
+        """List zip members (no extraction) for hidden executables."""
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                encrypted = False
+                has_executable = False
+                for info in zf.infolist()[:self._MAX_ARCHIVE_MEMBERS]:
+                    if info.flag_bits & 0x1:
+                        encrypted = True
+                    member_ext = os.path.splitext(info.filename.lower())[1].lstrip('.')
+                    if member_ext.strip() in self.EXECUTABLE_EXTENSIONS:
+                        has_executable = True
+                if has_executable:
+                    issues.append('archive_contains_executable')
+                    escalate('critical')
+                if encrypted:
+                    # Password-protected zips are a standard AV-evasion trick
+                    issues.append('encrypted_archive')
+                    escalate('high')
+        except Exception as e:
+            logger.debug(f"[AttachmentAnalyzerService] zip inspection failed: {e}")
+            issues.append('corrupt_or_unreadable_archive')
 
     def _format_size(self, size: int) -> str:
         """Format file size in human-readable format."""

@@ -7,6 +7,7 @@ import io
 import logging
 import mimetypes
 import os
+import re
 from datetime import datetime
 from email import policy
 from email.header import decode_header, make_header
@@ -14,6 +15,25 @@ from email.parser import BytesParser
 from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
+
+try:
+    from bs4 import BeautifulSoup
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
+
+
+def html_to_text(html: str) -> str:
+    """Derive readable plain text from HTML for language analysis."""
+    if not html:
+        return ""
+    if BS4_AVAILABLE:
+        try:
+            return BeautifulSoup(html, 'html.parser').get_text(separator=' ', strip=True)
+        except Exception as e:
+            logger.debug(f"[email_parser] HTML-to-text failed: {e}")
+    # Crude fallback: strip tags
+    return re.sub(r'<[^>]+>', ' ', html)
 
 
 class EmailParserService:
@@ -119,6 +139,8 @@ class EmailParserService:
         body_parts = self._get_body_parts(msg)
         body_text = "\n".join(body_parts.get('plain', []))
         body_html = "\n".join(body_parts.get('html', []))
+        if not body_text.strip() and body_html:
+            body_text = html_to_text(body_html)
 
         # Extract attachments
         attachments = self._extract_attachments_eml(msg)
@@ -128,6 +150,9 @@ class EmailParserService:
             'body_text': body_text,
             'body_html': body_html,
             'attachments': attachments,
+            # Raw message bytes for signature verification (DKIM). Internal
+            # only — stripped by the analyzer, never serialized to JSON.
+            'raw_bytes': data,
         }
 
     def _parse_msg(self, data: bytes) -> Dict[str, Any]:
@@ -179,7 +204,9 @@ class EmailParserService:
             body_html = m.htmlBody or ""
             if isinstance(body_html, bytes):
                 body_html = body_html.decode('utf-8', errors='replace')
-            body_text = (m.body or "") if not body_html else ""
+            body_text = m.body or ""
+            if not body_text.strip() and body_html:
+                body_text = html_to_text(body_html)
 
             # Extract attachments
             attachments = self._extract_attachments_msg(m)
@@ -232,12 +259,16 @@ class EmailParserService:
 
             content_type = part.get_content_type() or ''
             ext = os.path.splitext(filename.lower())[1].lstrip('.')
+            payload = part.get_payload(decode=True) or b''
 
             attachments.append({
                 'filename': filename,
                 'content_type': content_type,
                 'extension': ext,
-                'size': len(part.get_payload(decode=True) or b'')
+                'size': len(payload),
+                # Raw bytes for content inspection — internal only, the
+                # attachment analyzer strips this before results go to JSON.
+                'data': payload,
             })
 
         return attachments
@@ -257,7 +288,8 @@ class EmailParserService:
                     'filename': fname,
                     'content_type': kind,
                     'extension': ext,
-                    'size': len(data_b)
+                    'size': len(data_b),
+                    'data': data_b,
                 })
             except Exception as e:
                 logger.warning(f"[EmailParserService] Failed to extract MSG attachment: {e}")

@@ -15,7 +15,10 @@ from app.services.url_analyzer import URLAnalyzerService
 from app.services.content_analyzer import ContentAnalyzerService
 from app.services.attachment_analyzer import AttachmentAnalyzerService
 from app.services.header_forensics import HeaderForensicsService
-from app.utils.extractors import extract_sender_domain, extract_sender_ip
+from app.services.auth_verifier import AuthVerifierService
+from app.services.virustotal_service import VirusTotalService
+from app.services.yara_scanner import get_scanner
+from app.utils.extractors import extract_sender_domain, extract_sender_ip, email_domain
 from app.utils.validators import validate_domain, validate_public_ip
 
 logger = logging.getLogger(__name__)
@@ -31,6 +34,10 @@ class EmailAnalyzerService:
         *,
         enable_whois: bool = True,
         enable_abuseipdb: bool = True,
+        enable_virustotal: bool = False,
+        virustotal_key: Optional[str] = None,
+        enable_auth_verification: bool = True,
+        yara_rules_path: Optional[str] = None,
         dns_timeout: int = 5,
         whois_timeout: int = 10,
         http_timeout: int = 10,
@@ -44,6 +51,17 @@ class EmailAnalyzerService:
             if enable_abuseipdb and abuseipdb_key
             else None
         )
+        self.virustotal = (
+            VirusTotalService(virustotal_key, timeout=http_timeout)
+            if enable_virustotal and virustotal_key
+            else None
+        )
+        self.auth_verifier = (
+            AuthVerifierService(timeout=dns_timeout * 2)
+            if enable_auth_verification
+            else None
+        )
+        self.yara_scanner = get_scanner(yara_rules_path)
         self.url_analyzer = URLAnalyzerService()
         self.content_analyzer = ContentAnalyzerService()
         self.attachment_analyzer = AttachmentAnalyzerService()
@@ -92,27 +110,46 @@ class EmailAnalyzerService:
         if not dkim_domain or not validate_domain(dkim_domain.lower()):
             dkim_domain = sender_domain
 
-        # External lookups (DNS, WHOIS, IP reputation) are independent —
-        # run them concurrently instead of paying each timeout in sequence.
+        # Local analysis first (CPU only) — its outputs feed the lookups
+        combined_text = f"{body_text}\n{body_html}"
+        content_analysis = self.content_analyzer.analyze(combined_text, body_html)
+
+        # Analyze URLs (regex over text + href/src attributes from HTML)
+        urls = self.url_analyzer.extract_urls(combined_text, body_html)
+        url_analysis = self.url_analyzer.analyze_urls(urls, sender_domain)
+
+        # Analyze attachments (includes magic-byte content inspection)
+        attachment_analysis = self.attachment_analyzer.analyze_attachments(attachments)
+
+        # YARA scan over body and attachment bytes
+        self._apply_yara(
+            combined_text, attachments, content_analysis, attachment_analysis
+        )
+
+        # SPF is evaluated against the MAIL FROM (Return-Path) domain
+        mail_from_domain = email_domain(headers.get('return_path', '')) or sender_domain
+
+        # External lookups (DNS, WHOIS, IP reputation, VirusTotal, and
+        # independent auth verification) are independent — run them
+        # concurrently instead of paying each timeout in sequence.
         lookups = self._run_external_lookups(
-            sender_domain, sender_ip, dkim_domain, dkim_selector
+            sender_domain, sender_ip, dkim_domain, dkim_selector,
+            attachment_hashes=[
+                a.get('sha256') for a in attachment_analysis.get('attachments', [])
+                if a.get('sha256')
+            ],
+            raw_bytes=parsed_data.get('raw_bytes'),
+            mail_from_domain=mail_from_domain,
         )
         spf_record = lookups.get('spf')
         dmarc_record = lookups.get('dmarc')
         dkim_record = lookups.get('dkim')
         whois_data = lookups.get('whois')
         abuse_data = lookups.get('abuse')
+        verification = lookups.get('verify')
 
-        # Analyze content
-        combined_text = f"{body_text}\n{body_html}"
-        content_analysis = self.content_analyzer.analyze(combined_text, body_html)
-
-        # Analyze URLs
-        urls = self.url_analyzer.extract_urls(combined_text)
-        url_analysis = self.url_analyzer.analyze_urls(urls, sender_domain)
-
-        # Analyze attachments
-        attachment_analysis = self.attachment_analyzer.analyze_attachments(attachments)
+        # Merge VirusTotal verdicts into the attachment results
+        self._apply_virustotal(lookups.get('vt') or {}, attachment_analysis)
 
         # Analyze authentication results — only the topmost header, stamped by
         # the receiving server. Sender-forged Authentication-Results headers
@@ -131,14 +168,16 @@ class EmailAnalyzerService:
         # Detect suspicions (now also checks domain age)
         suspicions = self._detect_suspicions(
             headers, abuse_data, auth_analysis,
-            url_analysis, attachment_analysis, whois_data
+            url_analysis, attachment_analysis, whois_data,
+            verification=verification,
         )
 
         # Calculate risk score (domain age + compound rules + whitelist)
         risk_score, risk_level, whitelist_applied = self._calculate_risk_score(
             auth_analysis, abuse_data, url_analysis,
             attachment_analysis, content_analysis, suspicions,
-            whois_data=whois_data, sender_domain=sender_domain
+            whois_data=whois_data, sender_domain=sender_domain,
+            verification=verification,
         )
 
         return {
@@ -155,6 +194,7 @@ class EmailAnalyzerService:
             'authentication': {
                 'auth_results_raw': headers.get('auth_results'),
                 'auth_analysis': auth_analysis,
+                'verification': verification,
                 'spf': spf_record,
                 'dmarc': dmarc_record,
                 'dkim': dkim_record,
@@ -182,12 +222,68 @@ class EmailAnalyzerService:
             }
         }
 
+    def _apply_yara(
+        self,
+        combined_text: str,
+        attachments: List[Dict[str, Any]],
+        content_analysis: Dict[str, Any],
+        attachment_analysis: Dict[str, Any],
+    ) -> None:
+        """Scan body + attachment bytes with YARA and merge matches in place."""
+        if not self.yara_scanner.available:
+            return
+
+        body_matches = self.yara_scanner.scan(combined_text.encode('utf-8', 'replace'))
+        existing = content_analysis.get('yara_matches', [])
+        content_analysis['yara_matches'] = list(dict.fromkeys(existing + body_matches))
+
+        analyzed = attachment_analysis.get('attachments', [])
+        for original, result in zip(attachments, analyzed):
+            data = original.get('data') or b''
+            if not data:
+                continue
+            matches = self.yara_scanner.scan(data)
+            if matches:
+                result['yara_matches'] = matches
+                result['issues'].append('yara_match')
+                result['is_suspicious'] = True
+                result['severity'] = 'critical'
+        attachment_analysis['suspicious_count'] = sum(
+            1 for a in analyzed if a.get('is_suspicious')
+        )
+
+    def _apply_virustotal(
+        self,
+        vt_results: Dict[str, Any],
+        attachment_analysis: Dict[str, Any],
+    ) -> None:
+        """Merge VirusTotal verdicts into analyzed attachments in place."""
+        if not vt_results:
+            return
+
+        analyzed = attachment_analysis.get('attachments', [])
+        for result in analyzed:
+            verdict = vt_results.get(result.get('sha256'))
+            if verdict is None:
+                continue
+            result['virustotal'] = verdict
+            if verdict.get('malicious', 0) > 0:
+                result['issues'].append('virustotal_malicious')
+                result['is_suspicious'] = True
+                result['severity'] = 'critical'
+        attachment_analysis['suspicious_count'] = sum(
+            1 for a in analyzed if a.get('is_suspicious')
+        )
+
     def _run_external_lookups(
         self,
         sender_domain: Optional[str],
         sender_ip: Optional[str],
         dkim_domain: Optional[str],
         dkim_selector: Optional[str],
+        attachment_hashes: Optional[List[str]] = None,
+        raw_bytes: Optional[bytes] = None,
+        mail_from_domain: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run all network lookups concurrently.
 
@@ -205,6 +301,13 @@ class EmailAnalyzerService:
             jobs['dkim'] = (self.dns_checker.check_dkim, (dkim_domain, dkim_selector))
         if self.ip_reputation and sender_ip:
             jobs['abuse'] = (self.ip_reputation.check_ip, (sender_ip,))
+        if self.virustotal and attachment_hashes:
+            jobs['vt'] = (self.virustotal.check_hashes, (attachment_hashes,))
+        if self.auth_verifier and self.auth_verifier.available and (raw_bytes or sender_ip):
+            jobs['verify'] = (
+                self.auth_verifier.verify,
+                (raw_bytes, sender_ip, mail_from_domain or sender_domain),
+            )
 
         results: Dict[str, Any] = {}
         if not jobs:
@@ -279,7 +382,8 @@ class EmailAnalyzerService:
         auth_analysis: Dict[str, Any],
         url_analysis: Dict[str, Any],
         attachment_analysis: Dict[str, Any],
-        whois_data: Optional[Dict[str, Any]] = None
+        whois_data: Optional[Dict[str, Any]] = None,
+        verification: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, str]]:
         """Detect suspicious indicators"""
         suspicions = []
@@ -334,6 +438,37 @@ class EmailAnalyzerService:
                 f'Domain registered only {domain_age_days} day(s) ago — newly registered domain'
             )
 
+        # Independent verification vs. claimed results
+        fail_results = {'fail', 'softfail', 'permerror'}
+        if verification and verification.get('available'):
+            for mechanism in ('spf', 'dkim'):
+                verified = verification.get(mechanism)
+                claimed = auth_analysis.get(mechanism)
+                if verified in fail_results:
+                    if claimed == 'pass':
+                        add_suspicion(
+                            'authentication', 'critical',
+                            f'Authentication-Results claims {mechanism.upper()}=pass '
+                            f'but independent verification returned {verified} — '
+                            'headers may be forged'
+                        )
+                    else:
+                        add_suspicion(
+                            'authentication', 'high',
+                            f'Independent {mechanism.upper()} verification failed: {verified}'
+                        )
+
+        # VirusTotal verdicts on attachments
+        for attachment in attachment_analysis.get('attachments', []):
+            verdict = attachment.get('virustotal') or {}
+            if verdict.get('malicious', 0) > 0:
+                label = verdict.get('popular_threat_label') or 'malware'
+                add_suspicion(
+                    'attachments', 'critical',
+                    f'VirusTotal: {verdict["malicious"]} engine(s) flag '
+                    f'"{attachment.get("filename", "attachment")}" as malicious ({label})'
+                )
+
         return suspicions
 
     def _calculate_risk_score(
@@ -345,7 +480,8 @@ class EmailAnalyzerService:
         content_analysis: Dict[str, Any],
         suspicions: List[Dict[str, str]],
         whois_data: Optional[Dict[str, Any]] = None,
-        sender_domain: Optional[str] = None
+        sender_domain: Optional[str] = None,
+        verification: Optional[Dict[str, Any]] = None
     ) -> tuple:
         """Calculate overall risk score (0-100), risk level, and whitelist flag"""
         score = 0
@@ -364,8 +500,16 @@ class EmailAnalyzerService:
         # URLs (max 20 points)
         score += min(20, url_analysis.get('suspicious_count', 0) * 5)
 
-        # Attachments (max 15 points)
-        score += min(15, attachment_analysis.get('suspicious_count', 0) * 5)
+        # Attachments (max 15 points) — weighted by severity so one critical
+        # attachment (hidden executable, VT hit) outweighs mild oddities
+        severity_points = {'critical': 12, 'high': 8, 'medium': 5, 'low': 2}
+        weighted = sum(
+            severity_points.get(a.get('severity'), 0)
+            for a in attachment_analysis.get('attachments', [])
+            if a.get('is_suspicious')
+        )
+        count_based = attachment_analysis.get('suspicious_count', 0) * 5
+        score += min(15, max(weighted, count_based))
 
         # Content indicators (max 10 points)
         score += min(10, len(content_analysis.get('urgent_phrases', [])) * 2)
@@ -381,6 +525,27 @@ class EmailAnalyzerService:
                 score += 8
             elif domain_age_days < 365:
                 score += 3
+
+        # Independently verified authentication failures carry more weight
+        # than header claims (max 20 points)
+        if verification and verification.get('available'):
+            if verification.get('spf') in {'fail', 'softfail', 'permerror'}:
+                score += 10
+            if verification.get('dkim') == 'fail':
+                score += 10
+
+        # VirusTotal detections: confirmed malware forces critical
+        vt_malicious = max(
+            (
+                (a.get('virustotal') or {}).get('malicious', 0)
+                for a in attachment_analysis.get('attachments', [])
+            ),
+            default=0,
+        )
+        if vt_malicious >= 3:
+            score = max(score, 85)
+        elif vt_malicious >= 1:
+            score += 15
 
         # Compound escalation rules
         spf_result = auth_analysis.get('spf', '') or ''

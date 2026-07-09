@@ -3,6 +3,8 @@ Content Analyzer Service
 Analyzes email content for phishing indicators
 """
 
+import json
+import os
 import re
 import logging
 from typing import Dict, Any, List
@@ -15,30 +17,67 @@ try:
 except ImportError:
     BS4_AVAILABLE = False
 
+_KEYWORDS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'data', 'phishing_keywords',
+)
+
+# Minimal built-in fallback if the data files are missing/corrupt
+_FALLBACK_KEYWORDS = {
+    'urgent_phrases': [
+        'action required', 'verify your account', 'urgent', 'suspended',
+        'unusual activity', 'act now',
+    ],
+    'generic_greetings': ['dear customer', 'dear user', 'valued customer'],
+    'credential_keywords': ['password', 'credit card', 'login', 'cvv'],
+}
+
+
+def _load_keyword_lists() -> Dict[str, List[str]]:
+    """Merge phishing keyword lists across all language files.
+
+    Emails routinely mix languages, so all lists are matched at once —
+    no language detection step to get wrong.
+    """
+    merged: Dict[str, List[str]] = {
+        'urgent_phrases': [],
+        'generic_greetings': [],
+        'credential_keywords': [],
+    }
+    loaded_any = False
+    try:
+        for fname in sorted(os.listdir(_KEYWORDS_DIR)):
+            if not fname.endswith('.json'):
+                continue
+            path = os.path.join(_KEYWORDS_DIR, fname)
+            try:
+                with open(path, encoding='utf-8') as f:
+                    data = json.load(f)
+                for key in merged:
+                    merged[key].extend(
+                        str(kw).lower() for kw in data.get(key, [])
+                    )
+                loaded_any = True
+            except Exception as e:
+                logger.warning(f"[ContentAnalyzerService] Bad keyword file {fname}: {e}")
+    except OSError as e:
+        logger.warning(f"[ContentAnalyzerService] Keyword dir unavailable: {e}")
+
+    if not loaded_any:
+        return {k: list(v) for k, v in _FALLBACK_KEYWORDS.items()}
+    # De-duplicate, preserve order
+    return {k: list(dict.fromkeys(v)) for k, v in merged.items()}
+
+
+_KEYWORDS = _load_keyword_lists()
+
 
 class ContentAnalyzerService:
     """Service for analyzing email content and structure"""
 
-    # Phishing keyword lists
-    URGENT_PHRASES = [
-        'important notice', 'action required', 'verify your account',
-        'update your account', 'password expires', 'urgent', 'last warning',
-        'immediate', 'suspended', 'locked', 'unusual activity', 'confirm your identity',
-        'security alert', 'verify identity', 'update payment', 'billing problem',
-        'reactivate', 'click here immediately', 'act now', 'limited time'
-    ]
-
-    GENERIC_GREETINGS = [
-        'dear customer', 'dear user', 'dear friend', 'dear client',
-        'dear member', 'dear sir', 'dear madam', 'valued customer',
-        'valued member', 'hello user'
-    ]
-
-    CREDENTIAL_KEYWORDS = [
-        'password', 'username', 'login', 'credentials', 'credit card',
-        'ssn', 'social security', 'account number', 'pin', 'cvv',
-        'security code', 'card number', 'expiration date', 'billing address'
-    ]
+    URGENT_PHRASES = _KEYWORDS['urgent_phrases']
+    GENERIC_GREETINGS = _KEYWORDS['generic_greetings']
+    CREDENTIAL_KEYWORDS = _KEYWORDS['credential_keywords']
 
     def __init__(self):
         pass

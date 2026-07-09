@@ -5,12 +5,19 @@ Analyzes URLs found in emails for suspicious characteristics
 
 import re
 import logging
+import unicodedata
 import urllib.parse
 from typing import List, Dict, Any, Optional
 
 import tldextract
 
 logger = logging.getLogger(__name__)
+
+try:
+    from bs4 import BeautifulSoup
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
 
 # Trailing punctuation that belongs to surrounding prose, not the URL itself
 _TRAILING_JUNK = re.compile(r'[.,;:!?)>\]]+$')
@@ -26,6 +33,57 @@ def _registered_domain(host: str) -> str:
         return ""
     ext = _tld_extract(host.lower())
     return ext.top_domain_under_public_suffix or host.lower()
+
+
+# Cyrillic letters that render (near-)identically to Latin ones — the raw
+# material of homograph attacks like "pаypal.com".
+_CYRILLIC_CONFUSABLES = set('аеорсухіјѕԛԝьӏԁɡ')
+
+_SCRIPT_PREFIXES = ('LATIN', 'CYRILLIC', 'GREEK', 'HEBREW', 'ARABIC')
+
+
+def _label_scripts(label: str) -> set:
+    """Return the set of Unicode scripts used by letters in a label."""
+    scripts = set()
+    for ch in label:
+        if not ch.isalpha():
+            continue
+        if ch.isascii():
+            scripts.add('LATIN')
+            continue
+        name = unicodedata.name(ch, '')
+        for prefix in _SCRIPT_PREFIXES:
+            if name.startswith(prefix):
+                scripts.add(prefix)
+                break
+        else:
+            scripts.add('OTHER')
+    return scripts
+
+
+def _is_homograph_label(label: str) -> bool:
+    """Detect labels crafted to impersonate Latin domain names."""
+    if label.startswith('xn--'):
+        try:
+            label = label.encode('ascii').decode('idna')
+        except Exception:
+            return False
+
+    scripts = _label_scripts(label)
+
+    # Mixing Latin with Cyrillic/Greek in one label is the classic attack;
+    # no legitimate registry allows it.
+    if 'LATIN' in scripts and scripts & {'CYRILLIC', 'GREEK'}:
+        return True
+
+    # An all-Cyrillic label built only from Latin-lookalike letters
+    # (e.g. "аррӏе") is visually indistinguishable from Latin.
+    if scripts == {'CYRILLIC'}:
+        letters = [ch for ch in label if ch.isalpha()]
+        if letters and all(ch in _CYRILLIC_CONFUSABLES for ch in letters):
+            return True
+
+    return False
 
 
 class URLAnalyzerService:
@@ -46,12 +104,39 @@ class URLAnalyzerService:
         # The old r'https?://[\w./?=#@%&+-]+' had an unintentional '+' to '-'
         # character-class range that included ',' and missed many valid URL chars.
         self.url_pattern = re.compile(r'https?://[^\s<>"\')\]]+', re.IGNORECASE)
+        # Scheme-less URLs ("www.example.com/x") that mail clients auto-link
+        self.www_pattern = re.compile(r'(?<![\w@/.])www\.[^\s<>"\')\]]+', re.IGNORECASE)
 
-    def extract_urls(self, text: str) -> List[str]:
-        """Extract all URLs from text, stripping trailing prose punctuation."""
-        if not text:
-            return []
-        return [_TRAILING_JUNK.sub('', u) for u in self.url_pattern.findall(text)]
+    def extract_urls(self, text: str, html: str = '') -> List[str]:
+        """Extract URLs from text and (optionally) HTML attributes.
+
+        Covers plain https?:// links, scheme-less www. links, and href/src
+        attribute values that a regex over rendered text can miss.
+        De-duplicated, order preserved.
+        """
+        urls: List[str] = []
+
+        if text:
+            urls.extend(self.url_pattern.findall(text))
+            urls.extend(
+                f'http://{u}' for u in self.www_pattern.findall(text)
+            )
+
+        if html and BS4_AVAILABLE:
+            try:
+                soup = BeautifulSoup(html, 'html.parser')
+                for tag in soup.find_all(['a', 'area', 'form', 'iframe', 'img', 'script']):
+                    for attr in ('href', 'src', 'action'):
+                        value = (tag.get(attr) or '').strip()
+                        if value.lower().startswith(('http://', 'https://')):
+                            urls.append(value)
+                        elif value.lower().startswith('www.'):
+                            urls.append(f'http://{value}')
+            except Exception as e:
+                logger.debug('[URLAnalyzerService] HTML URL extraction failed: %s', e)
+
+        cleaned = [_TRAILING_JUNK.sub('', u) for u in urls]
+        return list(dict.fromkeys(u for u in cleaned if u))
 
     def analyze_single_url(self, url: str, sender_domain: Optional[str] = None) -> Dict[str, Any]:
         """Analyze a single URL for suspicious characteristics."""
@@ -80,6 +165,9 @@ class URLAnalyzerService:
 
         if any(label.startswith('xn--') for label in domain.lower().split('.')):
             issues.append('punycode_domain')
+
+        if any(_is_homograph_label(label) for label in domain.lower().split('.')):
+            issues.append('homograph_domain')
 
         if suffix and suffix.split('.')[-1] in self.SUSPICIOUS_TLDS:
             issues.append('suspicious_tld')

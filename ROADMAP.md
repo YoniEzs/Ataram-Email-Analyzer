@@ -97,43 +97,47 @@ cryptography 48.0.1, pytest 9.0.3, pytest-cov 7.0.0.
   consumes it and it's not JSON-serializable. Drop it or use it for deeper
   analysis (see P2).
 
-## P2 — Better detection
+## P2 — Better detection ✅ (completed 2026-07)
 
-- [ ] **Real YARA scanning** (M)
+The "verify authentication" item ships as an independent verification
+layer (pyspf + dkimpy, ENABLE_AUTH_VERIFICATION) that cross-checks the
+claimed Authentication-Results and flags contradictions as forgery.
+
+- [x] **Real YARA scanning** (M)
   `Config.YARA_RULES_PATH` exists but is never read; `content_analyzer.py`
   only does "YARA-like" substring checks. Integrate `yara-python`, load rules
   from the configured path, scan bodies and attachment bytes.
 
-- [ ] **VirusTotal integration** (M)
+- [x] **VirusTotal integration** (M)
   `ENABLE_VIRUSTOTAL` / `VIRUSTOTAL_API_KEY` config exists with no service
   behind it. Hash attachments (sha256) and query the VT file/URL APIs, with
   caching and strict timeouts.
 
-- [ ] **Verify authentication instead of parsing claims** (L)
+- [x] **Verify authentication instead of parsing claims** (L)
   Evaluate SPF ourselves against the originating IP (`pyspf`) and verify DKIM
   signatures (`dkimpy`) using the raw message — this also mitigates the P0
   trust issue at its root.
 
-- [ ] **Attachment content inspection** (M)
+- [x] **Attachment content inspection** (M)
   Analysis is filename-only today. Compare magic bytes against the claimed
   extension (e.g. an "invoice.pdf" that starts with `MZ`), peek inside
   archives (bounded depth/size) for executable payloads.
 
-- [ ] **Homograph & IDN detection** (S)
+- [x] **Homograph & IDN detection** (S)
   Beyond the `xn--` prefix check: decode punycode, flag mixed-script and
   confusable domains (e.g. Cyrillic `а` in `pаypal.com`).
 
-- [ ] **Multi-language phishing keywords** (S)
+- [x] **Multi-language phishing keywords** (S)
   `content_analyzer.py` keyword lists are English-only; Hebrew (and other)
   phishing emails sail through. Move lists to data files keyed by language,
   detect language, and load the right lists (start with `he`).
 
-- [ ] **Smarter URL extraction** (S)
+- [x] **Smarter URL extraction** (S)
   Catch scheme-less URLs (`www.example.com`), extract `href` values directly
   from parsed HTML (already have BeautifulSoup), and de-duplicate against the
   regex pass.
 
-- [ ] **MSG body fallback** (S)
+- [x] **MSG body fallback** (S)
   `_parse_msg` leaves `body_text` empty when HTML exists; derive text from the
   HTML so language analysis always has clean input. Same for EML-only-HTML.
 

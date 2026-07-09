@@ -37,8 +37,13 @@ class Config:
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
     UPLOAD_ALLOWED_EXTENSIONS = {'eml', 'msg'}
 
-    # YARA Rules
-    YARA_RULES_PATH = os.environ.get('YARA_RULES_PATH', 'yara_rules')
+    # YARA Rules — relative paths resolve against the backend root
+    _yara_path = os.environ.get('YARA_RULES_PATH', 'yara_rules')
+    YARA_RULES_PATH = (
+        _yara_path
+        if os.path.isabs(_yara_path)
+        else os.path.abspath(os.path.join(basedir, '..', _yara_path))
+    )
 
     # Rate limiting
     RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'true').lower() == 'true'
@@ -61,6 +66,11 @@ class Config:
     ENABLE_WHOIS = os.environ.get('ENABLE_WHOIS', 'true').lower() == 'true'
     ENABLE_ABUSEIPDB = os.environ.get('ENABLE_ABUSEIPDB', 'true').lower() == 'true'
     ENABLE_VIRUSTOTAL = os.environ.get('ENABLE_VIRUSTOTAL', 'false').lower() == 'true'
+    # Independent SPF/DKIM verification (pyspf/dkimpy) — verifies signatures
+    # and SPF policy instead of trusting Authentication-Results claims
+    ENABLE_AUTH_VERIFICATION = (
+        os.environ.get('ENABLE_AUTH_VERIFICATION', 'true').lower() == 'true'
+    )
 
     # Trusted sender domain whitelist — empty by default.
     # The old default included gmail.com/outlook.com/etc., which are frequently
