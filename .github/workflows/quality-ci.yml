@@ -30,3 +30,25 @@ jobs:
           else
             git diff --check HEAD^ HEAD
           fi
+
+  dependency-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Audit dependencies for known vulnerabilities
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt

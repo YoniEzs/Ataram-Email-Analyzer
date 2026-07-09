@@ -43,6 +43,14 @@ class Config:
     # Rate limiting
     RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'true').lower() == 'true'
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', '100 per hour')
+    # Shared storage for rate-limit counters. With multiple gunicorn workers
+    # the in-memory default keeps a separate counter per worker — point this
+    # at Redis (redis://host:6379) in production. Falls back to REDIS_URL.
+    RATELIMIT_STORAGE_URI = (
+        os.environ.get('RATELIMIT_STORAGE_URI')
+        or os.environ.get('REDIS_URL')
+        or 'memory://'
+    )
 
     # Timeouts
     DNS_TIMEOUT = int(os.environ.get('DNS_TIMEOUT', 5))
@@ -65,8 +73,10 @@ class Config:
         if d.strip()
     ]
 
-    # Logging
+    # Logging — stdout is the default sink; set LOG_TO_FILE=true for a
+    # rotating file log under logs/ as well.
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+    LOG_TO_FILE = os.environ.get('LOG_TO_FILE', 'false').lower() == 'true'
 
 
 class DevelopmentConfig(Config):

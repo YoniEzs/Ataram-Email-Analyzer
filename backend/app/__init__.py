@@ -6,6 +6,7 @@ Ataram Email Security Platform
 import logging
 import os
 import secrets
+import sys
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask, jsonify
@@ -56,20 +57,33 @@ def create_app(config_class=Config):
         },
     })
 
-    # File logging (production only)
+    # Production logging: stdout by default (survives redeploys on PaaS
+    # platforms with ephemeral filesystems); rotating file log is opt-in.
     if not app.debug and not app.testing:
-        os.makedirs('logs', exist_ok=True)
-        file_handler = RotatingFileHandler(
-            'logs/email_analyzer.log',
-            maxBytes=10_240_000,
-            backupCount=10,
+        log_level = getattr(
+            logging, str(app.config.get('LOG_LEVEL', 'INFO')).upper(), logging.INFO
         )
-        file_handler.setFormatter(logging.Formatter(
+        formatter = logging.Formatter(
             '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-        ))
-        file_handler.setLevel(logging.INFO)
-        app.logger.addHandler(file_handler)
-        app.logger.setLevel(logging.INFO)
+        )
+
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        stream_handler.setLevel(log_level)
+        app.logger.addHandler(stream_handler)
+
+        if app.config.get('LOG_TO_FILE'):
+            os.makedirs('logs', exist_ok=True)
+            file_handler = RotatingFileHandler(
+                'logs/email_analyzer.log',
+                maxBytes=10_240_000,
+                backupCount=10,
+            )
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(log_level)
+            app.logger.addHandler(file_handler)
+
+        app.logger.setLevel(log_level)
         app.logger.info('Email Analyzer startup')
 
     limiter.init_app(app)

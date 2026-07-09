@@ -66,29 +66,33 @@ Fixed on branch `claude/code-review-bug-fixes-wpp6u0`:
   `"annexe_‮fdp.exe"` which displays as `annexe_exe.pdf`. Flag Unicode
   bidi control characters in filenames as critical.
 
-## P1 — Production hardening
+## P1 — Production hardening ✅ (completed 2026-07)
 
-- [ ] **Shared storage for rate limiting and caches** (M)
+Also bumped vulnerable pinned dependencies flagged by the new pip-audit
+gate: flask-cors 6.0.0, python-dotenv 1.2.2, requests 2.33.0, lxml 6.1.0,
+cryptography 48.0.1, pytest 9.0.3, pytest-cov 7.0.0.
+
+- [x] **Shared storage for rate limiting and caches** (M)
   Flask-Limiter uses in-memory storage (explicit warning at startup) and
   `utils/cache.py` is per-process. With `gunicorn --workers 2` limits and
   caches are per-worker. Add Redis via `RATELIMIT_STORAGE_URI` and a cache
   backend switch; keep in-memory as the dev fallback.
 
-- [ ] **Log to stdout in production** (S)
+- [x] **Log to stdout in production** (S)
   `app/__init__.py` writes `logs/email_analyzer.log`; on Render the filesystem
   is ephemeral and logs vanish on redeploy. Prefer stdout (picked up by the
   platform) with file logging as an opt-in.
 
-- [ ] **Parallelize external lookups** (M)
+- [x] **Parallelize external lookups** (M)
   `email_analyzer.py::analyze` runs SPF → DMARC → DKIM → WHOIS → AbuseIPDB
   sequentially; worst case adds tens of seconds per analysis. Fan out with a
   `ThreadPoolExecutor` and a global deadline.
 
-- [ ] **Supply-chain & CI hygiene** (S)
+- [x] **Supply-chain & CI hygiene** (S)
   Enable Dependabot (pip + actions + docker), add `pip-audit` to `quality-ci`,
   and a coverage floor to `backend-ci` so the new test suite doesn't erode.
 
-- [ ] **Remove `msg_object` from parser output** (S)
+- [x] **Remove `msg_object` from parser output** (S)
   `email_parser.py` returns the raw `EmailMessage` in `parsed_data`; nothing
   consumes it and it's not JSON-serializable. Drop it or use it for deeper
   analysis (see P2).

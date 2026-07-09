@@ -4,6 +4,8 @@ Main analysis orchestrator that coordinates all analysis modules
 """
 
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 from app.services.dns_checker import DNSCheckerService
@@ -51,6 +53,9 @@ class EmailAnalyzerService:
             for domain in (whitelist_domains or [])
             if validate_domain(domain.strip().lower())
         }
+        # Every lookup already enforces its own timeout; this is a safety net
+        # so one misbehaving lookup can never stall a whole analysis.
+        self.lookup_deadline = max(dns_timeout, whois_timeout, http_timeout) + 5
 
     def analyze(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -79,10 +84,6 @@ class EmailAnalyzerService:
         if sender_ip and not validate_public_ip(sender_ip):
             sender_ip = None
 
-        # Perform DNS checks
-        spf_record = self.dns_checker.check_spf(sender_domain) if sender_domain else None
-        dmarc_record = self.dns_checker.check_dmarc(sender_domain) if sender_domain else None
-
         # DKIM keys live under the signing domain (d= tag), which may differ
         # from the From: domain (e.g. mail sent via an ESP).
         dkim_signature = headers.get('dkim_signature', '')
@@ -90,19 +91,17 @@ class EmailAnalyzerService:
         dkim_domain = self.dns_checker.parse_dkim_domain(dkim_signature)
         if not dkim_domain or not validate_domain(dkim_domain.lower()):
             dkim_domain = sender_domain
-        dkim_record = self.dns_checker.check_dkim(dkim_domain, dkim_selector) if dkim_domain else None
 
-        # WHOIS lookup
-        whois_data = (
-            self.whois_service.lookup(sender_domain)
-            if self.whois_service and sender_domain
-            else None
+        # External lookups (DNS, WHOIS, IP reputation) are independent —
+        # run them concurrently instead of paying each timeout in sequence.
+        lookups = self._run_external_lookups(
+            sender_domain, sender_ip, dkim_domain, dkim_selector
         )
-
-        # IP reputation check
-        abuse_data = None
-        if self.ip_reputation and sender_ip:
-            abuse_data = self.ip_reputation.check_ip(sender_ip)
+        spf_record = lookups.get('spf')
+        dmarc_record = lookups.get('dmarc')
+        dkim_record = lookups.get('dkim')
+        whois_data = lookups.get('whois')
+        abuse_data = lookups.get('abuse')
 
         # Analyze content
         combined_text = f"{body_text}\n{body_html}"
@@ -182,6 +181,55 @@ class EmailAnalyzerService:
                 'whitelist_applied': whitelist_applied,
             }
         }
+
+    def _run_external_lookups(
+        self,
+        sender_domain: Optional[str],
+        sender_ip: Optional[str],
+        dkim_domain: Optional[str],
+        dkim_selector: Optional[str],
+    ) -> Dict[str, Any]:
+        """Run all network lookups concurrently.
+
+        Each service enforces its own timeout; on top of that a global
+        deadline bounds the whole batch, and any single failure is logged
+        and treated as "no data" rather than failing the analysis.
+        """
+        jobs = {}
+        if sender_domain:
+            jobs['spf'] = (self.dns_checker.check_spf, (sender_domain,))
+            jobs['dmarc'] = (self.dns_checker.check_dmarc, (sender_domain,))
+            if self.whois_service:
+                jobs['whois'] = (self.whois_service.lookup, (sender_domain,))
+        if dkim_domain and dkim_selector:
+            jobs['dkim'] = (self.dns_checker.check_dkim, (dkim_domain, dkim_selector))
+        if self.ip_reputation and sender_ip:
+            jobs['abuse'] = (self.ip_reputation.check_ip, (sender_ip,))
+
+        results: Dict[str, Any] = {}
+        if not jobs:
+            return results
+
+        executor = ThreadPoolExecutor(max_workers=len(jobs))
+        try:
+            futures = {
+                name: executor.submit(fn, *args) for name, (fn, args) in jobs.items()
+            }
+            deadline = time.monotonic() + self.lookup_deadline
+            for name, future in futures.items():
+                remaining = max(0.1, deadline - time.monotonic())
+                try:
+                    results[name] = future.result(timeout=remaining)
+                except FutureTimeoutError:
+                    logger.warning(f"[EmailAnalyzerService] {name} lookup timed out")
+                    results[name] = None
+                except Exception as e:
+                    logger.warning(f"[EmailAnalyzerService] {name} lookup failed: {e}")
+                    results[name] = None
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+        return results
 
     def _analyze_authentication(self, auth_results: str) -> Dict[str, Any]:
         """Parse authentication results header"""

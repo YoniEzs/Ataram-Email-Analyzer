@@ -48,13 +48,13 @@ jobs:
         working-directory: backend
         run: python -m ruff check --no-cache app tests
 
-      - name: Run tests
+      - name: Run tests with coverage floor
         working-directory: backend
         env:
           PYTHONDONTWRITEBYTECODE: '1'
           SECRET_KEY: test-secret-key-not-for-production
           FLASK_ENV: testing
-        run: pytest -q
+        run: pytest -q --cov=app --cov-report=term --cov-fail-under=65
 
   docker:
     name: Backend Docker smoke test

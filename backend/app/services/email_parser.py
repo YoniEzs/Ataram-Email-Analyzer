@@ -128,7 +128,6 @@ class EmailParserService:
             'body_text': body_text,
             'body_html': body_html,
             'attachments': attachments,
-            'msg_object': msg
         }
 
     def _parse_msg(self, data: bytes) -> Dict[str, Any]:

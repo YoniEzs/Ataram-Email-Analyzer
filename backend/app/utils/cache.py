@@ -1,12 +1,20 @@
 """
-In-memory TTL cache for DNS, WHOIS, and IP reputation results.
+TTL cache for DNS, WHOIS, and IP reputation results.
+
+Backend is chosen at import time: Redis when CACHE_REDIS_URL / REDIS_URL is
+set (shared across gunicorn workers), otherwise a bounded in-memory cache.
+Redis failures degrade to cache misses — they never break an analysis.
 """
 
+import json
+import logging
+import os
 from collections import OrderedDict
 from threading import RLock
 import time
 from typing import Any, Optional
 
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ENTRIES = 512
 
@@ -71,7 +79,63 @@ class TTLCache:
         return len(expired)
 
 
-_cache = TTLCache()
+class RedisCache:
+    """Redis-backed cache with the same get/set semantics as TTLCache.
+
+    Values are stored as JSON (all cached payloads are plain dicts/lists/
+    strings). Connection or serialization errors are logged and treated as
+    cache misses so a Redis outage can't take analyses down.
+    """
+
+    _PREFIX = 'email-analyzer:'
+
+    def __init__(self, url: str):
+        import redis  # deferred so the package is only needed when enabled
+
+        self._client = redis.Redis.from_url(
+            url, socket_timeout=2, socket_connect_timeout=2
+        )
+
+    def get(self, key: str) -> Optional[Any]:
+        try:
+            raw = self._client.get(self._PREFIX + key)
+            return json.loads(raw) if raw is not None else None
+        except Exception as e:
+            logger.warning(f"[RedisCache] get failed for {key}: {e}")
+            return None
+
+    def set(self, key: str, value: Any, ttl_seconds: int) -> None:
+        try:
+            if value is None or ttl_seconds <= 0:
+                self._client.delete(self._PREFIX + key)
+                return
+            self._client.setex(self._PREFIX + key, ttl_seconds, json.dumps(value))
+        except Exception as e:
+            logger.warning(f"[RedisCache] set failed for {key}: {e}")
+
+    def clear(self) -> None:
+        try:
+            keys = list(self._client.scan_iter(self._PREFIX + '*'))
+            if keys:
+                self._client.delete(*keys)
+        except Exception as e:
+            logger.warning(f"[RedisCache] clear failed: {e}")
+
+
+def _create_cache():
+    url = os.environ.get('CACHE_REDIS_URL') or os.environ.get('REDIS_URL')
+    if url:
+        try:
+            return RedisCache(url)
+        except Exception as e:
+            logger.warning(
+                f"[cache] Redis backend unavailable ({e}); "
+                "falling back to in-memory cache"
+            )
+    return TTLCache()
+
+
+_cache = _create_cache()
 
 
 def cache_get(key: str) -> Optional[Any]:
