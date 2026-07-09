@@ -5,10 +5,14 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Ataram Email Analyzer - Initializing...');
 
+    // Localize static UI before anything renders text
+    window.initI18n();
+
     // Initialize UI controller
     window.uiController.initDragAndDrop();
     window.uiController.initRetryButton();
     window.uiController.initDownloadButton();
+    window.uiController.initPrintButton();
     window.uiController.initHistory();
 
     // Check API health on load

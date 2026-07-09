@@ -141,32 +141,38 @@ claimed Authentication-Results and flags contradictions as forgery.
   `_parse_msg` leaves `body_text` empty when HTML exists; derive text from the
   HTML so language analysis always has clean input. Same for EML-only-HTML.
 
-## P3 — Product & UX
+## P3 — Product & UX ✅ (completed 2026-07)
 
-- [ ] **OpenAPI spec + versioned API** (M)
+Frontend tests ship as backend-run static contract tests
+(`test_p3_product.py`, in CI) plus a Playwright browser smoke test
+(`frontend/tests/smoke.mjs`, run locally / on demand). Report export is
+print-based: the Print Report button + print stylesheet produce a clean
+PDF via the browser's Save as PDF.
+
+- [x] **OpenAPI spec + versioned API** (M)
   Publish `/api/v1` with an OpenAPI document (flask-smorest or apispec);
   freeze the response contract the frontend relies on.
 
-- [ ] **Frontend resilience** (S)
+- [x] **Frontend resilience** (S)
   `api.js` fetches have no timeout — add `AbortController` (~60 s) and upload
   progress; friendlier copy for 429 responses.
 
-- [ ] **i18n (Hebrew first)** (M)
+- [x] **i18n (Hebrew first)** (M)
   UI strings are hard-coded English. Add a locale layer with `he`/`en`,
   including RTL layout support.
 
-- [ ] **Report export** (M)
+- [x] **Report export** (M)
   JSON export exists; add a printable/PDF report of the analysis for sharing
   with non-technical recipients.
 
-- [ ] **Frontend tests** (M)
+- [x] **Frontend tests** (M)
   Only the backend DOM-contract test guards the UI today. Add unit tests for
   `results.js` rendering and a Playwright smoke test (upload → results).
 
 ## Engineering quality (ongoing)
 
 - [ ] Type hints everywhere + `mypy --strict` in CI (M)
-- [ ] Pre-commit hooks: ruff, ruff-format, whitespace (S)
+- [x] Pre-commit hooks: ruff + hygiene checks (`.pre-commit-config.yaml`) (S)
 - [ ] Pin the Docker base images by digest; scan images in `docker-publish` (S)
 - [ ] Decide on `SECRET_KEY`: currently required in production but no
   sessions/CSRF use it — either use it or drop the hard requirement (S)

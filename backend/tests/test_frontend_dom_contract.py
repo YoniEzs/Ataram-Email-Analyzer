@@ -20,13 +20,16 @@ REQUIRED_IDS = {
     "retryButton",
     "exportBar",
     "downloadReportBtn",
+    "printReportBtn",
     "historySection",
     "historyList",
     "historyDisclosure",
     "clearHistoryBtn",
+    "langToggle",
 }
 
 EXPECTED_SCRIPT_ORDER = [
+    "js/i18n.js",
     "js/config.js",
     "js/api.js",
     "js/ui.js",

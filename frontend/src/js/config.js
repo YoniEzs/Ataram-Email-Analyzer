@@ -18,6 +18,10 @@ const CONFIG = {
     MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB
     ALLOWED_EXTENSIONS: ['eml', 'msg'],
 
+    // Client-side request bounds
+    REQUEST_TIMEOUT_MS: 120000, // analysis fans out to external services
+    HEALTH_TIMEOUT_MS: 10000,
+
     // UI
     ANIMATION_DURATION: 300
 };

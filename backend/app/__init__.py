@@ -90,6 +90,9 @@ def create_app(config_class=Config):
 
     from app.api import analysis
     app.register_blueprint(analysis.bp)
+    # Versioned alias — same handlers, stable contract for API consumers.
+    # /api/* stays for backward compatibility; /api/v1/* is the documented path.
+    app.register_blueprint(analysis.bp, url_prefix='/api/v1', name='analysis_v1')
 
     @app.route('/health')
     def health():

@@ -36,6 +36,13 @@ def ratelimit_handler(e):
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@bp.route('/openapi.json', methods=['GET'])
+def openapi_spec():
+    """Machine-readable API contract (OpenAPI 3.0)."""
+    from app.api.openapi import OPENAPI_SPEC
+    return jsonify(OPENAPI_SPEC), 200
+
+
 @bp.route('/analyze', methods=['POST'])
 @limiter.limit("10 per minute")
 def analyze_email():
