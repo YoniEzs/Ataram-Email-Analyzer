@@ -40,7 +40,7 @@ def create_app(config_class=Config):
             )
 
     # HTTP security headers (Talisman if installed, manual fallback otherwise)
-    _apply_security_headers(app)
+    talisman = _apply_security_headers(app)
 
     # CORS — explicit origins only; no wildcard
     CORS(app, resources={
@@ -78,17 +78,24 @@ def create_app(config_class=Config):
     from app.api import analysis
     app.register_blueprint(analysis.bp)
 
-    @app.route('/health')
     def health():
         return {'status': 'healthy', 'service': 'Email Analyzer API'}, 200
+
+    # /health must answer plain-HTTP probes (Docker HEALTHCHECK, load
+    # balancers) without a force-HTTPS redirect.
+    if talisman is not None:
+        health = talisman(force_https=False)(health)
+    app.add_url_rule('/health', 'health', health)
 
     return app
 
 
-def _apply_security_headers(app: Flask) -> None:
+def _apply_security_headers(app: Flask):
     """Set HTTP security headers.  Uses flask-talisman when available,
     falls back to a manual after_request hook so the app still hardens
-    itself even if the package isn't installed yet."""
+    itself even if the package isn't installed yet.
+
+    Returns the Talisman instance (for per-view overrides) or None."""
     try:
         from flask_talisman import Talisman
 
@@ -102,10 +109,14 @@ def _apply_security_headers(app: Flask) -> None:
             'object-src': ["'none'"],
             'frame-ancestors': ["'none'"],
         }
-        Talisman(
+        https_on = (
+            app.config.get('FORCE_HTTPS', True)
+            and not (app.debug or app.testing)
+        )
+        return Talisman(
             app,
-            force_https=not app.debug,
-            strict_transport_security=not app.debug,
+            force_https=https_on,
+            strict_transport_security=https_on,
             strict_transport_security_max_age=31_536_000,
             content_security_policy=csp,
             referrer_policy='strict-origin-when-cross-origin',
@@ -122,3 +133,5 @@ def _apply_security_headers(app: Flask) -> None:
                     'max-age=31536000; includeSubDomains'
                 )
             return response
+
+        return None

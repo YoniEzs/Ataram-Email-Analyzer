@@ -32,7 +32,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 EXPOSE 5000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5000/health', timeout=5)"
+    CMD python -c "import requests; requests.get('http://localhost:5000/health', timeout=5).raise_for_status()"
 
 # sync workers (no gevent — not in deps and not needed for I/O-bound analysis tasks at this scale)
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", \

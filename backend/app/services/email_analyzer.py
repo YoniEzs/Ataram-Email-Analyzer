@@ -132,7 +132,7 @@ class EmailAnalyzerService:
         )
 
         return {
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'headers': {
                 'sender': headers.get('sender'),
                 'recipients': headers.get('recipients'),
@@ -206,7 +206,8 @@ class EmailAnalyzerService:
             # Normalise to naive UTC for comparison
             if creation_dt.tzinfo is not None:
                 creation_dt = creation_dt.astimezone(timezone.utc).replace(tzinfo=None)
-            return max(0, (datetime.utcnow() - creation_dt).days)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            return max(0, (now - creation_dt).days)
         except Exception as e:
             logger.warning(f"[EmailAnalyzerService] Failed to parse creation_date {creation_str!r}: {e}")
             return None

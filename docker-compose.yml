@@ -1,0 +1,33 @@
+# Ataram Email Analyzer — one-command self-hosted deployment
+#
+#   cp .env.example .env   # then set SECRET_KEY (and optional API keys)
+#   docker compose up --build
+#
+# Frontend: http://localhost:3000
+# Backend:  http://localhost:5000
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "5000:5000"
+    environment:
+      FLASK_ENV: production
+      # Compose serves plain HTTP locally; put a TLS proxy in front for production
+      FORCE_HTTPS: "false"
+      # Generate a key with:  python -c "import secrets; print(secrets.token_hex(32))"
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is missing - copy .env.example to .env and set it}"
+      ABUSEIPDB_KEY: ${ABUSEIPDB_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      ENABLE_WHOIS: ${ENABLE_WHOIS:-true}
+      ENABLE_ABUSEIPDB: ${ENABLE_ABUSEIPDB:-true}
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

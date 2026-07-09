@@ -2,6 +2,20 @@
 
 Get your email analyzer running in 5 minutes! 🚀
 
+## Option 0: Docker Compose (Fastest)
+
+```bash
+git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
+cd Ataram-Email-Analyzer
+cp .env.example .env
+# Set SECRET_KEY in .env (generate: python -c "import secrets; print(secrets.token_hex(32))")
+docker compose up --build
+```
+
+Open http://localhost:3000 and upload an email file. Done!
+
+---
+
 ## Option 1: Deploy to Production (Recommended)
 
 ### Prerequisites
@@ -11,14 +25,9 @@ Get your email analyzer running in 5 minutes! 🚀
 
 ### Steps
 
-1. **Push to GitHub**
+1. **Fork this repo on GitHub** (or push your own copy)
    ```bash
-   cd Ataram-Email-Analyzer
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USERNAME/ataram-email-analyzer.git
-   git push -u origin main
+   git clone https://github.com/YOUR_USERNAME/Ataram-Email-Analyzer.git
    ```
 
 2. **Deploy Backend to Render**

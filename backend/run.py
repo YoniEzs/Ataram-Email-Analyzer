@@ -16,13 +16,11 @@ if __name__ == '__main__':
     debug = env == 'development'
 
     print(f"""
-    ╔══════════════════════════════════════════════════════════╗
-    ║  Email Analyzer API - Ataram Security Platform          ║
-    ║  Environment: {env.upper().ljust(43)} ║
-    ║  Server: http://{host}:{port}
-    ║  Health: http://{host}:{port}/health
-    ║  API Endpoint: http://{host}:{port}/api/analyze
-    ╚══════════════════════════════════════════════════════════╝
+    Email Analyzer API - Ataram Security Platform
+    Environment:  {env}
+    Server:       http://{host}:{port}
+    Health:       http://{host}:{port}/health
+    API Endpoint: http://{host}:{port}/api/analyze
     """)
 
     app.run(
