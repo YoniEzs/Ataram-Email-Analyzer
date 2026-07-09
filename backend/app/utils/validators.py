@@ -73,8 +73,14 @@ def validate_email_file(file_data: bytes, filename: str) -> Tuple[bool, str]:
 
     if ext == 'eml':
         try:
-            content = file_data[:1000].decode('utf-8', errors='ignore')
-            required_indicators = ['From:', 'To:', 'Subject:', 'Date:']
+            # Real exports often start with several KB of Received:/ARC-*/
+            # DKIM-Signature headers, so scan a generous window before the
+            # From:/To:/Subject: lines show up.
+            content = file_data[:8192].decode('utf-8', errors='ignore')
+            required_indicators = [
+                'From:', 'To:', 'Subject:', 'Date:',
+                'Received:', 'Return-Path:', 'Delivered-To:',
+            ]
             if not any(indicator in content for indicator in required_indicators):
                 return False, "File does not appear to be a valid EML file"
         except Exception:

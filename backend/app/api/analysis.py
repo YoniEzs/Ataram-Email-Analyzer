@@ -5,6 +5,7 @@ Email Analysis API Endpoints
 import traceback
 
 from flask import Blueprint, request, jsonify, current_app
+from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
 from app.services.email_parser import EmailParserService
@@ -103,6 +104,9 @@ def analyze_email():
         current_app.logger.info('Analysis complete: %s', filename)
         return jsonify(analysis_result), 200
 
+    except HTTPException:
+        # Let Flask's error handlers produce the proper status (413 etc.)
+        raise
     except Exception as e:
         current_app.logger.error('Error analyzing email: %s', str(e))
         current_app.logger.error(traceback.format_exc())

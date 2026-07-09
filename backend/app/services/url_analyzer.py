@@ -8,10 +8,24 @@ import logging
 import urllib.parse
 from typing import List, Dict, Any, Optional
 
+import tldextract
+
 logger = logging.getLogger(__name__)
 
 # Trailing punctuation that belongs to surrounding prose, not the URL itself
 _TRAILING_JUNK = re.compile(r'[.,;:!?)>\]]+$')
+
+# Offline PSL extractor — uses the bundled Public Suffix List snapshot,
+# never fetches over the network at runtime.
+_tld_extract = tldextract.TLDExtract(suffix_list_urls=())
+
+
+def _registered_domain(host: str) -> str:
+    """PSL-aware registered domain (example.co.uk stays example.co.uk)."""
+    if not host:
+        return ""
+    ext = _tld_extract(host.lower())
+    return ext.top_domain_under_public_suffix or host.lower()
 
 
 class URLAnalyzerService:
@@ -52,9 +66,11 @@ class URLAnalyzerService:
         except Exception as e:
             logger.debug('[URLAnalyzerService] URL parse error for %r: %s', url, e)
 
+        suffix = ""
         if domain:
-            parts = domain.lower().split('.')
-            registered_domain = '.'.join(parts[-2:]) if len(parts) >= 2 else domain.lower()
+            ext = _tld_extract(domain.lower())
+            registered_domain = ext.top_domain_under_public_suffix or domain.lower()
+            suffix = ext.suffix
 
         if registered_domain in self.URL_SHORTENERS:
             issues.append('shortened_url')
@@ -62,13 +78,11 @@ class URLAnalyzerService:
         if re.fullmatch(r'\d{1,3}(?:\.\d{1,3}){3}', domain or ''):
             issues.append('ip_address_host')
 
-        if domain.startswith('xn--'):
+        if any(label.startswith('xn--') for label in domain.lower().split('.')):
             issues.append('punycode_domain')
 
-        if registered_domain:
-            tld = registered_domain.split('.')[-1]
-            if tld in self.SUSPICIOUS_TLDS:
-                issues.append('suspicious_tld')
+        if suffix and suffix.split('.')[-1] in self.SUSPICIOUS_TLDS:
+            issues.append('suspicious_tld')
 
         # Credential-stealing pattern: user@host in authority
         # (userinfo only — '@' in the path or query is legitimate)
@@ -81,8 +95,11 @@ class URLAnalyzerService:
         if any(param in url.lower() for param in ['redirect=', 'url=', 'next=', 'goto=']):
             issues.append('redirect_parameter')
 
-        if sender_domain and registered_domain and sender_domain.lower() != registered_domain:
-            issues.append('domain_mismatch_with_sender')
+        # Compare registered domains so www.example.com links in example.com
+        # mail don't trip the mismatch flag.
+        if sender_domain and registered_domain:
+            if _registered_domain(sender_domain) != registered_domain:
+                issues.append('domain_mismatch_with_sender')
 
         if parsed is not None and parsed.query:
             suspicious_params = ['cmd=', 'exec=', 'shell=', 'token=', 'key=']

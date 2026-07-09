@@ -5,6 +5,15 @@ Analyzes email attachments for suspicious characteristics
 
 from typing import List, Dict, Any
 
+# Unicode bidirectional control characters. U+202E (right-to-left override)
+# makes "annexe_‮fdp.exe" display as "annexe_exe.pdf"; legitimate
+# filenames essentially never contain any of these.
+_BIDI_CONTROL_CHARS = frozenset(
+    '\u200e\u200f'                               # LRM, RLM
+    '\u202a\u202b\u202c\u202d\u202e'  # LRE, RLE, PDF, LRO, RLO
+    '\u2066\u2067\u2068\u2069'        # LRI, RLI, FSI, PDI
+)
+
 
 class AttachmentAnalyzerService:
     """Service for analyzing email attachments"""
@@ -133,6 +142,11 @@ class AttachmentAnalyzerService:
         if filename != filename.strip() or raw_ext != raw_ext.strip():
             issues.append('hidden_extension')
             escalate('high')
+
+        # Bidi control characters visually reverse the displayed extension
+        if any(ch in _BIDI_CONTROL_CHARS for ch in filename):
+            issues.append('bidi_spoofed_filename')
+            escalate('critical')
 
         return {
             'filename': filename,

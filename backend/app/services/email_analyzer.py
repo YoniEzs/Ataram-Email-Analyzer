@@ -82,8 +82,15 @@ class EmailAnalyzerService:
         # Perform DNS checks
         spf_record = self.dns_checker.check_spf(sender_domain) if sender_domain else None
         dmarc_record = self.dns_checker.check_dmarc(sender_domain) if sender_domain else None
-        dkim_selector = self.dns_checker.parse_dkim_selector(headers.get('dkim_signature', ''))
-        dkim_record = self.dns_checker.check_dkim(sender_domain, dkim_selector) if sender_domain else None
+
+        # DKIM keys live under the signing domain (d= tag), which may differ
+        # from the From: domain (e.g. mail sent via an ESP).
+        dkim_signature = headers.get('dkim_signature', '')
+        dkim_selector = self.dns_checker.parse_dkim_selector(dkim_signature)
+        dkim_domain = self.dns_checker.parse_dkim_domain(dkim_signature)
+        if not dkim_domain or not validate_domain(dkim_domain.lower()):
+            dkim_domain = sender_domain
+        dkim_record = self.dns_checker.check_dkim(dkim_domain, dkim_selector) if dkim_domain else None
 
         # WHOIS lookup
         whois_data = (
@@ -108,8 +115,12 @@ class EmailAnalyzerService:
         # Analyze attachments
         attachment_analysis = self.attachment_analyzer.analyze_attachments(attachments)
 
-        # Analyze authentication results
-        auth_analysis = self._analyze_authentication(headers.get('auth_results', ''))
+        # Analyze authentication results — only the topmost header, stamped by
+        # the receiving server. Sender-forged Authentication-Results headers
+        # appear lower in the chain and must not influence the verdict.
+        auth_analysis = self._analyze_authentication(
+            headers.get('auth_results_top') or headers.get('auth_results', '')
+        )
 
         # Header forensics
         routing_forensics = self.header_forensics.analyze(

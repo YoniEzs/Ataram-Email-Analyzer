@@ -27,41 +27,41 @@ Fixed on branch `claude/code-review-bug-fixes-wpp6u0`:
 
 ---
 
-## P0 — Correctness & security bugs
+## P0 — Correctness & security bugs ✅ (completed 2026-07)
 
-- [ ] **Don't trust attacker-supplied `Authentication-Results` headers** (M)
+- [x] **Don't trust attacker-supplied `Authentication-Results` headers** (M)
   `email_analyzer.py::_analyze_authentication` regex-scans *all*
   `Authentication-Results` headers joined together. A crafted email can embed
   its own fake `spf=pass dkim=pass dmarc=pass` header. Use only the topmost
   header (added by the receiving server), and ideally verify the authserv-id.
 
-- [ ] **EML validation can reject valid emails** (S)
+- [x] **EML validation can reject valid emails** (S)
   `validators.py::validate_email_file` requires `From:`/`To:`/`Subject:`/`Date:`
   within the first 1,000 bytes. Real exports (Gmail/Outlook) often start with
   >1 KB of `Received:`/`ARC-*`/`DKIM-Signature` headers, pushing those past the
   window. Widen the window (e.g. 8 KB) or parse headers properly.
 
-- [ ] **Registered-domain extraction is wrong for ccTLDs** (S)
+- [x] **Registered-domain extraction is wrong for ccTLDs** (S)
   `url_analyzer.py` takes the last two labels, so `example.co.uk` → `co.uk`.
   This skews `shortened_url`, `suspicious_tld`, and
   `domain_mismatch_with_sender`. Use `tldextract` (Public Suffix List).
 
-- [ ] **DKIM check queries the wrong domain and accepts any TXT** (S)
+- [x] **DKIM check queries the wrong domain and accepts any TXT** (S)
   `dns_checker.py::check_dkim` uses the *sender* domain instead of the `d=`
   domain from the `DKIM-Signature` header, and returns the first TXT record
   without checking it looks like a DKIM key (`v=DKIM1`/`p=`).
 
-- [ ] **IPv6 senders are invisible** (S)
+- [x] **IPv6 senders are invisible** (S)
   `extractors.py::extract_sender_ip` only matches IPv4, so mail relayed over
   IPv6 yields no sender IP (and no reputation check). Reuse the candidate
   iteration from `header_forensics.py`, which already handles both.
 
-- [ ] **Consistent JSON error responses** (S)
+- [x] **Consistent JSON error responses** (S)
   413 (file too large), 404, and 500 outside the blueprint return Flask's HTML
   error pages. Register app-level JSON error handlers so the frontend never
   parses HTML.
 
-- [ ] **Detect RTL-override filename spoofing** (S)
+- [x] **Detect RTL-override filename spoofing** (S)
   `attachment_analyzer.py` doesn't flag U+202E tricks like
   `"annexe_‮fdp.exe"` which displays as `annexe_exe.pdf`. Flag Unicode
   bidi control characters in filenames as critical.

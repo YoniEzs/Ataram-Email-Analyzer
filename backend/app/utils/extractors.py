@@ -4,11 +4,16 @@ Information extraction utilities
 
 import re
 import ipaddress
-from typing import Optional, List
+from typing import Iterable, Optional, List
 from email.utils import parseaddr
 
 
 IPV4_PATTERN = re.compile(r'(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)')
+
+# Bracketed IPv4/IPv6 literals in Received: headers, including IPv6: prefixes.
+_BRACKETED_IP_PATTERN = re.compile(r'\[([^\]\s]+)\]')
+# Conservative unbracketed IPv4 fallback for non-standard Received: headers.
+_UNBRACKETED_IPV4_PATTERN = re.compile(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])')
 
 
 def extract_sender_domain(from_header: str) -> Optional[str]:
@@ -64,6 +69,39 @@ def email_domain(email_or_header: str) -> str:
         return ""
 
 
+def _normalize_ip_candidate(candidate: str) -> str:
+    candidate = candidate.strip()
+    if candidate.lower().startswith('ipv6:'):
+        return candidate[5:]
+    return candidate
+
+
+def iter_ip_candidates(hop: str) -> Iterable[str]:
+    """Yield IP-like candidates (IPv4 and IPv6) from one Received: header."""
+    if not hop:
+        return
+
+    yielded = set()
+    for candidate in _BRACKETED_IP_PATTERN.findall(hop):
+        normalized = _normalize_ip_candidate(candidate)
+        if normalized not in yielded:
+            yielded.add(normalized)
+            yield normalized
+
+    for candidate in _UNBRACKETED_IPV4_PATTERN.findall(hop):
+        if candidate not in yielded:
+            yielded.add(candidate)
+            yield candidate
+
+
+def is_global_ip(ip: str) -> bool:
+    """Check if a string is a globally-routable IPv4 or IPv6 address."""
+    try:
+        return ipaddress.ip_address(ip).is_global
+    except ValueError:
+        return False
+
+
 def is_public_ipv4(ip: str) -> bool:
     """
     Check if IP is a public IPv4 address
@@ -86,19 +124,18 @@ def extract_sender_ip(received_headers: List[str]) -> Optional[str]:
     Extract sender IP from Received headers
 
     Args:
-        received_headers: List of Received headers
+        received_headers: List of Received headers (newest first)
 
     Returns:
-        First public IP found or None
+        First public IPv4 or IPv6 address found in the oldest hop, or None
     """
     if not received_headers:
         return None
 
     # Start from the last (oldest) Received header
     for header in reversed(received_headers):
-        # Find all IPv4 addresses in this header
-        for ip in IPV4_PATTERN.findall(header):
-            if is_public_ipv4(ip):
-                return ip
+        for candidate in iter_ip_candidates(header):
+            if is_global_ip(candidate):
+                return candidate
 
     return None

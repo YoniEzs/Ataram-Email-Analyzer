@@ -8,7 +8,7 @@ import os
 import secrets
 from logging.handlers import RotatingFileHandler
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -80,6 +80,37 @@ def create_app(config_class=Config):
     @app.route('/health')
     def health():
         return {'status': 'healthy', 'service': 'Email Analyzer API'}, 200
+
+    # This is a JSON API — errors raised outside the blueprint (404, 405,
+    # oversized uploads, unhandled exceptions) must not return HTML pages.
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({
+            'error': 'Not found',
+            'message': 'The requested resource does not exist.',
+        }), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed(e):
+        return jsonify({
+            'error': 'Method not allowed',
+            'message': 'This HTTP method is not supported for this endpoint.',
+        }), 405
+
+    @app.errorhandler(413)
+    def payload_too_large(e):
+        max_mb = app.config.get('MAX_CONTENT_LENGTH', 0) // (1024 * 1024)
+        return jsonify({
+            'error': 'File too large',
+            'message': f'Upload exceeds the maximum size of {max_mb}MB.',
+        }), 413
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred. Please try again.',
+        }), 500
 
     return app
 

@@ -11,6 +11,7 @@ olefile==0.47
 # DNS and Network
 dnspython==2.6.1
 requests==2.32.3
+tldextract==5.3.1
 
 # WHOIS
 python-whois==0.9.5

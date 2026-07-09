@@ -96,13 +96,19 @@ class EmailParserService:
         def h(name: str) -> str:
             return self.decode_header(msg.get(name, ""))
 
+        # Headers are prepended in transit, so the first Authentication-Results
+        # is the one stamped by the final receiving server — the only one that
+        # can be trusted. Later ones may be forged by the sender.
+        auth_headers = [self.decode_header(x) for x in (msg.get_all("Authentication-Results", []) or [])]
+
         headers = {
             "sender": h("From"),
             "recipients": ", ".join([x for x in [h("To"), h("Cc")] if x]),
             "reply_to": h("Reply-To"),
             "date": h("Date"),
             "subject": h("Subject"),
-            "auth_results": " | ".join([self.decode_header(x) for x in (msg.get_all("Authentication-Results", []) or [])]),
+            "auth_results": " | ".join(auth_headers),
+            "auth_results_top": auth_headers[0] if auth_headers else "",
             "hops": [self.decode_header(x) for x in (msg.get_all("Received", []) or [])],
             "dkim_signature": h("DKIM-Signature"),
             "return_path": h("Return-Path"),
@@ -163,6 +169,7 @@ class EmailParserService:
                 "date": pick("Date", date_str),
                 "subject": pick("Subject", m.subject or ""),
                 "auth_results": pick("Authentication-Results", ""),
+                "auth_results_top": pick("Authentication-Results", ""),
                 "hops": [self.decode_header(x) for x in ((hdr_msg.get_all("Received") if hdr_msg else []) or [])],
                 "dkim_signature": pick("DKIM-Signature", ""),
                 "return_path": pick("Return-Path", ""),
