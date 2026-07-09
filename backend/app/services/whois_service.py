@@ -4,6 +4,7 @@ Domain registration information lookup
 """
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Optional, Dict, Any
 from datetime import datetime
 from app.utils.cache import cache_get, cache_set
@@ -42,7 +43,15 @@ class WhoisService:
             return cached
 
         try:
-            w = self.whois_module.whois(domain, timeout=self.timeout)
+            # python-whois has no timeout parameter and can block on slow
+            # WHOIS servers, so enforce the timeout from a worker thread.
+            # shutdown(wait=False) so a hung lookup can't block this request.
+            executor = ThreadPoolExecutor(max_workers=1)
+            try:
+                future = executor.submit(self.whois_module.whois, domain)
+                w = future.result(timeout=self.timeout)
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 
             def format_value(value):
                 """Format various value types to strings"""
@@ -54,7 +63,7 @@ class WhoisService:
 
             result = {
                 'domain': domain,
-                'registrar': getattr(w, 'registrar', None),
+                'registrar': format_value(getattr(w, 'registrar', None)),
                 'creation_date': format_value(getattr(w, 'creation_date', None)),
                 'expiration_date': format_value(getattr(w, 'expiration_date', None)),
                 'updated_date': format_value(getattr(w, 'updated_date', None)),
@@ -63,6 +72,9 @@ class WhoisService:
             }
             cache_set(f"whois:{domain}", result, 86400)
             return result
+        except FutureTimeoutError:
+            logger.warning(f"[WhoisService] WHOIS lookup timed out for {domain} after {self.timeout}s")
+            return None
         except Exception as e:
             logger.warning(f"[WhoisService] WHOIS lookup failed for {domain}: {e}")
             return None

@@ -74,35 +74,44 @@ class AttachmentAnalyzerService:
     def analyze_single_attachment(self, attachment: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze a single attachment."""
         filename = attachment.get('filename', '')
-        ext = attachment.get('extension', '').lower()
+        # Strip whitespace so "invoice.exe " can't dodge the extension checks.
+        raw_ext = attachment.get('extension', '')
+        ext = raw_ext.strip().lower()
         content_type = attachment.get('content_type', '')
         size = attachment.get('size', 0)
 
         issues = []
         severity = 'low'
 
+        def escalate(new_severity: str) -> None:
+            nonlocal severity
+            rank = {'low': 0, 'medium': 1, 'high': 2, 'critical': 3}
+            if rank[new_severity] > rank[severity]:
+                severity = new_severity
+
         if ext in self.EXECUTABLE_EXTENSIONS:
             issues.append('executable_file')
-            severity = 'critical'
+            escalate('critical')
         elif ext in self.MACRO_EXTENSIONS:
             issues.append('possible_macro_document')
-            severity = 'high'
+            escalate('high')
         elif ext in self.SCRIPT_EXTENSIONS:
             issues.append('script_file')
-            severity = 'high'
+            escalate('high')
         elif ext in self.ARCHIVE_EXTENSIONS:
             issues.append('archive_file')
-            severity = 'medium'
+            escalate('medium')
 
         # Double-extension: e.g. "invoice.pdf.exe"
         # Check if ANY non-last extension is a benign-looking document type
+        # (strip so "invoice.pdf    .exe" padding is caught too)
         parts = filename.split('.')
         if len(parts) > 2:
             benign_decoys = {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'jpg', 'jpeg',
                              'png', 'gif', 'txt', 'csv', 'mp4', 'mp3'}
-            if parts[-2].lower() in benign_decoys:
+            if parts[-2].strip().lower() in benign_decoys:
                 issues.append('double_extension')
-                severity = 'critical'
+                escalate('critical')
 
         suspicious_keywords = [
             'invoice', 'receipt', 'payment', 'statement', 'urgent', 'important',
@@ -114,15 +123,16 @@ class AttachmentAnalyzerService:
         # Very small executable (packer/dropper/stub)
         if ext in self.EXECUTABLE_EXTENSIONS and 0 < size < 10_240:
             issues.append('unusually_small_executable')
-            severity = 'critical'
+            escalate('critical')
 
         if size > 50 * 1024 * 1024:
             issues.append('unusually_large_file')
 
-        # Hidden extension via trailing space before real extension
-        if filename.rstrip().endswith('.' + ext) and filename != filename.rstrip():
+        # Hidden extension via whitespace around the real extension,
+        # e.g. "invoice.exe " or "report.pdf .exe"
+        if filename != filename.strip() or raw_ext != raw_ext.strip():
             issues.append('hidden_extension')
-            severity = 'high'
+            escalate('high')
 
         return {
             'filename': filename,

@@ -36,10 +36,9 @@ class DNSCheckerService:
             answers = dns.resolver.resolve(domain, 'TXT', lifetime=self.timeout)
             records = []
             for rdata in answers:
-                txt = rdata.to_text()
-                # Remove surrounding quotes
-                if txt.startswith('"') and txt.endswith('"'):
-                    txt = txt[1:-1]
+                # Long TXT records are split into multiple <=255-byte strings;
+                # join them (to_text() would leave '" "' separators inside).
+                txt = b''.join(rdata.strings).decode('utf-8', errors='replace')
                 records.append(txt)
             result = records if records else None
             cache_set(f"dns:{domain}", result, 3600)

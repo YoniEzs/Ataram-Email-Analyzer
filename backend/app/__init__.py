@@ -58,8 +58,7 @@ def create_app(config_class=Config):
 
     # File logging (production only)
     if not app.debug and not app.testing:
-        if not os.path.exists('logs'):
-            os.mkdir('logs')
+        os.makedirs('logs', exist_ok=True)
         file_handler = RotatingFileHandler(
             'logs/email_analyzer.log',
             maxBytes=10_240_000,
@@ -102,10 +101,11 @@ def _apply_security_headers(app: Flask) -> None:
             'object-src': ["'none'"],
             'frame-ancestors': ["'none'"],
         }
+        secure_transport = not (app.debug or app.testing)
         Talisman(
             app,
-            force_https=not app.debug,
-            strict_transport_security=not app.debug,
+            force_https=secure_transport,
+            strict_transport_security=secure_transport,
             strict_transport_security_max_age=31_536_000,
             content_security_policy=csp,
             referrer_policy='strict-origin-when-cross-origin',

@@ -7,6 +7,7 @@ import io
 import logging
 import mimetypes
 import os
+from datetime import datetime
 from email import policy
 from email.header import decode_header, make_header
 from email.parser import BytesParser
@@ -150,20 +151,28 @@ class EmailParserService:
                     return self.decode_header(hdr_msg.get(name))
                 return fallback
 
+            # extract_msg exposes .to/.cc as display strings and .date as a
+            # datetime — normalise everything to plain strings.
+            recipients = ", ".join(part for part in (m.to, m.cc) if part)
+            date_str = m.date.isoformat() if isinstance(m.date, datetime) else str(m.date or "")
+
             headers = {
                 "sender": pick("From", m.sender or ""),
-                "recipients": pick("To", ", ".join(m.to or []) + ((", " + ", ".join(m.cc or [])) if m.cc else "")),
+                "recipients": pick("To", recipients),
                 "reply_to": pick("Reply-To", ""),
-                "date": pick("Date", m.date or ""),
+                "date": pick("Date", date_str),
                 "subject": pick("Subject", m.subject or ""),
                 "auth_results": pick("Authentication-Results", ""),
                 "hops": [self.decode_header(x) for x in ((hdr_msg.get_all("Received") if hdr_msg else []) or [])],
                 "dkim_signature": pick("DKIM-Signature", ""),
                 "return_path": pick("Return-Path", ""),
-                "message_id": pick("Message-ID", getattr(m, "internetMessageId", "") or m.message_id or ""),
+                "message_id": pick("Message-ID", getattr(m, "messageId", "") or ""),
             }
 
+            # htmlBody is bytes in extract_msg — decode before analysis.
             body_html = m.htmlBody or ""
+            if isinstance(body_html, bytes):
+                body_html = body_html.decode('utf-8', errors='replace')
             body_text = (m.body or "") if not body_html else ""
 
             # Extract attachments

@@ -25,9 +25,13 @@ class Config:
     HOST = os.environ.get('HOST', '0.0.0.0')
 
     # CORS
-    CORS_ORIGINS = os.environ.get(
-        'CORS_ORIGINS', 'http://localhost:3000,https://ataram.uk'
-    ).split(',')
+    CORS_ORIGINS = [
+        origin.strip()
+        for origin in os.environ.get(
+            'CORS_ORIGINS', 'http://localhost:3000,https://ataram.uk'
+        ).split(',')
+        if origin.strip()
+    ]
 
     # File upload
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB

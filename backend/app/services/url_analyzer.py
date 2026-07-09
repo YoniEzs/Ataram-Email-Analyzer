@@ -44,6 +44,7 @@ class URLAnalyzerService:
         issues = []
         domain = ""
         registered_domain = ""
+        parsed = None
 
         try:
             parsed = urllib.parse.urlparse(url)
@@ -70,18 +71,12 @@ class URLAnalyzerService:
                 issues.append('suspicious_tld')
 
         # Credential-stealing pattern: user@host in authority
-        try:
-            authority = url.split('/')[2] if '/' in url[8:] else url[8:]
-            if '@' in authority:
-                issues.append('url_contains_at_sign')
-        except Exception as e:
-            logger.debug('[URLAnalyzerService] Authority parse error: %s', e)
+        # (userinfo only — '@' in the path or query is legitimate)
+        if parsed is not None and parsed.username is not None:
+            issues.append('url_contains_at_sign')
 
-        try:
-            if parsed.path and len(parsed.path) > 80:
-                issues.append('long_path')
-        except Exception:
-            pass
+        if parsed is not None and parsed.path and len(parsed.path) > 80:
+            issues.append('long_path')
 
         if any(param in url.lower() for param in ['redirect=', 'url=', 'next=', 'goto=']):
             issues.append('redirect_parameter')
@@ -89,7 +84,7 @@ class URLAnalyzerService:
         if sender_domain and registered_domain and sender_domain.lower() != registered_domain:
             issues.append('domain_mismatch_with_sender')
 
-        if parsed.query:
+        if parsed is not None and parsed.query:
             suspicious_params = ['cmd=', 'exec=', 'shell=', 'token=', 'key=']
             if any(param in parsed.query.lower() for param in suspicious_params):
                 issues.append('suspicious_parameters')
