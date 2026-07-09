@@ -24,20 +24,18 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # Fail-fast: SECRET_KEY must be set before production traffic arrives.
-    # In dev/debug mode we generate an ephemeral key so the app still starts.
+    # SECRET_KEY: nothing in this API uses sessions, cookies, or CSRF tokens,
+    # so a missing key is not a security problem — generate an ephemeral one
+    # rather than hard-failing deployment. If session-based features are ever
+    # added, set SECRET_KEY explicitly so signed values survive restarts and
+    # are shared across workers.
     if not app.config.get('SECRET_KEY'):
+        app.config['SECRET_KEY'] = secrets.token_hex(32)
         if not app.config.get('TESTING'):
-            if not app.debug:
-                raise RuntimeError(
-                    "SECRET_KEY is not set. "
-                    "Generate one with: "
-                    "python -c \"import secrets; print(secrets.token_hex(32))\""
-                )
-            app.config['SECRET_KEY'] = secrets.token_hex(32)
-            logging.getLogger(__name__).warning(
-                "Using an ephemeral SECRET_KEY — sessions will not survive restarts. "
-                "Set the SECRET_KEY environment variable."
+            logging.getLogger(__name__).info(
+                "SECRET_KEY not set — generated an ephemeral key. This API is "
+                "stateless (no sessions/CSRF), so this is safe; set SECRET_KEY "
+                "explicitly if session features are added."
             )
 
     # HTTP security headers (Talisman if installed, manual fallback otherwise)

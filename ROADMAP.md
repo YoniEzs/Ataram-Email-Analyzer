@@ -169,10 +169,18 @@ PDF via the browser's Save as PDF.
   Only the backend DOM-contract test guards the UI today. Add unit tests for
   `results.js` rendering and a Playwright smoke test (upload → results).
 
-## Engineering quality (ongoing)
+## Engineering quality ✅ (completed 2026-07)
 
-- [ ] Type hints everywhere + `mypy --strict` in CI (M)
+mypy runs in backend CI over `app/` (strict-leaning config in
+`backend/mypy.ini`; third-party libs without stubs are ignored).
+Docker base images are pinned by digest and kept fresh by Dependabot;
+Trivy blocks image publishing on HIGH/CRITICAL fixable CVEs.
+SECRET_KEY decision: the API is stateless (no sessions/CSRF), so the
+hard production requirement was dropped — an ephemeral key is generated
+when unset, with a startup note.
+
+- [x] Type hints + mypy in CI (`backend/mypy.ini`, backend-ci job) (M)
 - [x] Pre-commit hooks: ruff + hygiene checks (`.pre-commit-config.yaml`) (S)
-- [ ] Pin the Docker base images by digest; scan images in `docker-publish` (S)
-- [ ] Decide on `SECRET_KEY`: currently required in production but no
+- [x] Pin the Docker base images by digest; scan images in `docker-publish` (S)
+- [x] Decide on `SECRET_KEY`: currently required in production but no
   sessions/CSRF use it — either use it or drop the hard requirement (S)

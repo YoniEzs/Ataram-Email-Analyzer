@@ -22,10 +22,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Log in to Container Registry
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -33,7 +33,7 @@ jobs:
 
     - name: Extract metadata
       id: meta
-      uses: docker/metadata-action@v4
+      uses: docker/metadata-action@v5
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_BACKEND }}
         tags: |
@@ -43,8 +43,25 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=sha
 
-    - name: Build and push Backend image
-      uses: docker/build-push-action@v4
+    - name: Build Backend image (local, for scanning)
+      uses: docker/build-push-action@v6
+      with:
+        context: ./backend
+        load: true
+        tags: backend-scan-target:latest
+        labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Scan image for vulnerabilities (Trivy)
+      uses: aquasecurity/trivy-action@0.29.0
+      with:
+        image-ref: backend-scan-target:latest
+        format: table
+        exit-code: '1'
+        severity: CRITICAL,HIGH
+        ignore-unfixed: true
+
+    - name: Push Backend image
+      uses: docker/build-push-action@v6
       with:
         context: ./backend
         push: true
@@ -59,10 +76,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Log in to Container Registry
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -70,7 +87,7 @@ jobs:
 
     - name: Extract metadata
       id: meta
-      uses: docker/metadata-action@v4
+      uses: docker/metadata-action@v5
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_FRONTEND }}
         tags: |
@@ -80,8 +97,25 @@ jobs:
           type=semver,pattern={{major}}.{{minor}}
           type=sha
 
-    - name: Build and push Frontend image
-      uses: docker/build-push-action@v4
+    - name: Build Frontend image (local, for scanning)
+      uses: docker/build-push-action@v6
+      with:
+        context: ./frontend
+        load: true
+        tags: frontend-scan-target:latest
+        labels: ${{ steps.meta.outputs.labels }}
+
+    - name: Scan image for vulnerabilities (Trivy)
+      uses: aquasecurity/trivy-action@0.29.0
+      with:
+        image-ref: frontend-scan-target:latest
+        format: table
+        exit-code: '1'
+        severity: CRITICAL,HIGH
+        ignore-unfixed: true
+
+    - name: Push Frontend image
+      uses: docker/build-push-action@v6
       with:
         context: ./frontend
         push: true

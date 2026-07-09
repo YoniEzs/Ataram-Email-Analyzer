@@ -8,7 +8,7 @@ import io
 import logging
 import os
 import zipfile
-from typing import List, Dict, Any
+from typing import Any, Callable, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +206,9 @@ class AttachmentAnalyzerService:
             'is_suspicious': len(issues) > 0,
         }
 
-    def _inspect_content(self, data: bytes, ext: str, issues: List[str], escalate) -> None:
+    def _inspect_content(
+        self, data: bytes, ext: str, issues: List[str], escalate: Callable[[str], None]
+    ) -> None:
         """Compare actual file content against the claimed extension."""
         # Executable content hiding behind a non-executable name
         if data.startswith(self.EXECUTABLE_MAGIC) and ext not in self.EXECUTABLE_EXTENSIONS:
@@ -224,7 +226,9 @@ class AttachmentAnalyzerService:
         if ext == 'zip' and data.startswith(b'PK'):
             self._inspect_zip(data, issues, escalate)
 
-    def _inspect_zip(self, data: bytes, issues: List[str], escalate) -> None:
+    def _inspect_zip(
+        self, data: bytes, issues: List[str], escalate: Callable[[str], None]
+    ) -> None:
         """List zip members (no extraction) for hidden executables."""
         try:
             with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -247,7 +251,7 @@ class AttachmentAnalyzerService:
             logger.debug(f"[AttachmentAnalyzerService] zip inspection failed: {e}")
             issues.append('corrupt_or_unreadable_archive')
 
-    def _format_size(self, size: int) -> str:
+    def _format_size(self, size: float) -> str:
         """Format file size in human-readable format."""
         for unit in ['B', 'KB', 'MB', 'GB']:
             if size < 1024.0:

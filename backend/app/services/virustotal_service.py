@@ -61,14 +61,14 @@ class VirusTotalService:
             )
             if response.status_code == 404:
                 # Unknown to VT — cache the miss so we don't burn quota
-                result = {'known': False}
-                cache_set(f"vt:{sha256}", result, _CACHE_TTL_SECONDS)
-                return result
+                miss: Dict[str, Any] = {'known': False}
+                cache_set(f"vt:{sha256}", miss, _CACHE_TTL_SECONDS)
+                return miss
             response.raise_for_status()
 
             attributes = response.json().get('data', {}).get('attributes', {})
             stats = attributes.get('last_analysis_stats', {}) or {}
-            result = {
+            result: Dict[str, Any] = {
                 'known': True,
                 'malicious': int(stats.get('malicious', 0) or 0),
                 'suspicious': int(stats.get('suspicious', 0) or 0),

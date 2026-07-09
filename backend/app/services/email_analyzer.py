@@ -6,7 +6,7 @@ Main analysis orchestrator that coordinates all analysis modules
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
-from typing import Dict, Any, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
 from app.services.dns_checker import DNSCheckerService
 from app.services.whois_service import WhoisService
@@ -291,7 +291,7 @@ class EmailAnalyzerService:
         deadline bounds the whole batch, and any single failure is logged
         and treated as "no data" rather than failing the analysis.
         """
-        jobs = {}
+        jobs: Dict[str, Tuple[Callable[..., Any], tuple]] = {}
         if sender_domain:
             jobs['spf'] = (self.dns_checker.check_spf, (sender_domain,))
             jobs['dmarc'] = (self.dns_checker.check_dmarc, (sender_domain,))
@@ -388,7 +388,7 @@ class EmailAnalyzerService:
         """Detect suspicious indicators"""
         suspicions = []
 
-        def add_suspicion(category: str, severity: str, message: str):
+        def add_suspicion(category: str, severity: str, message: str) -> None:
             suspicions.append({
                 'category': category,
                 'severity': severity,

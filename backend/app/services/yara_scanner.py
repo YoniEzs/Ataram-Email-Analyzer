@@ -58,7 +58,7 @@ class YaraScanner:
 
     def scan(self, data: bytes) -> List[str]:
         """Scan bytes, returning matching rule names (empty when unavailable)."""
-        if not self.available or not data:
+        if not self.available or not data or self.rules is None:
             return []
         try:
             matches = self.rules.match(data=data, timeout=_SCAN_TIMEOUT_SECONDS)
@@ -69,7 +69,7 @@ class YaraScanner:
 
 
 # Rules are compiled once per path and reused across requests
-_scanners = {}
+_scanners: dict[str, YaraScanner] = {}
 
 
 def get_scanner(rules_path: Optional[str]) -> YaraScanner:

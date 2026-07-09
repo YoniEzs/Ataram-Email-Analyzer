@@ -110,7 +110,7 @@ class EmailParserService:
                     continue
                 payload = part.get_payload()
                 if isinstance(payload, list) and payload:
-                    msg = payload[0]
+                    msg = payload[0]  # type: ignore[assignment]
                     break
 
         def h(name: str) -> str:
@@ -177,8 +177,9 @@ class EmailParserService:
             hdr_msg = Parser(policy=policy.default).parsestr(raw_hdr) if raw_hdr else None
 
             def pick(name: str, fallback: str = "") -> str:
-                if hdr_msg and hdr_msg.get(name):
-                    return self.decode_header(hdr_msg.get(name))
+                value = hdr_msg.get(name) if hdr_msg else None
+                if value:
+                    return self.decode_header(str(value))
                 return fallback
 
             # extract_msg exposes .to/.cc as display strings and .date as a
@@ -218,7 +219,7 @@ class EmailParserService:
                 'attachments': attachments
             }
 
-    def _get_body_parts(self, msg) -> Dict[str, List[str]]:
+    def _get_body_parts(self, msg: Any) -> Dict[str, List[str]]:
         """Extract text and HTML parts from EML message"""
         parts: Dict[str, List[str]] = {"plain": [], "html": []}
 
@@ -244,7 +245,7 @@ class EmailParserService:
 
         return parts
 
-    def _extract_attachments_eml(self, msg) -> List[Dict[str, Any]]:
+    def _extract_attachments_eml(self, msg: Any) -> List[Dict[str, Any]]:
         """Extract attachments from EML message"""
         attachments: List[Dict[str, Any]] = []
 
@@ -273,7 +274,7 @@ class EmailParserService:
 
         return attachments
 
-    def _extract_attachments_msg(self, m) -> List[Dict[str, Any]]:
+    def _extract_attachments_msg(self, m: Any) -> List[Dict[str, Any]]:
         """Extract attachments from MSG message"""
         attachments: List[Dict[str, Any]] = []
 
