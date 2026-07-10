@@ -25,13 +25,24 @@ Comprehensive email analysis tool for detecting phishing, malware, and malicious
 ## 🎯 Features
 
 ### Email Analysis
-- ✅ **SPF/DKIM/DMARC Validation** - Verify sender authentication
-- ✅ **IP Reputation Checking** - Integration with AbuseIPDB
-- ✅ **URL Analysis** - Detect shortened, suspicious, and phishing URLs
-- ✅ **Attachment Scanning** - Identify malicious file types and executables
-- ✅ **Content Analysis** - Phishing keyword and pattern detection
-- ✅ **WHOIS Lookup** - Domain registration information
-- ✅ **Header Analysis** - Domain mismatch detection
+- ✅ **SPF/DKIM/DMARC Validation** - Parses receiving-server results *and*
+  independently verifies DKIM signatures and SPF policy (pyspf + dkimpy);
+  forged `Authentication-Results` headers are detected and flagged
+- ✅ **IP Reputation Checking** - AbuseIPDB integration (IPv4 + IPv6)
+- ✅ **URL Analysis** - Shorteners, suspicious TLDs (Public Suffix List aware),
+  redirect parameters, punycode and homograph domains (e.g. Cyrillic `а` in
+  `pаypal.com`), links hidden in HTML attributes
+- ✅ **Attachment Scanning** - Extension checks plus content inspection:
+  magic-byte vs claimed-type mismatch, executables inside zip archives,
+  encrypted archives, double extensions, RTL-override filename spoofing,
+  sha256 for every attachment
+- ✅ **YARA Scanning** - Compile your own rules (`YARA_RULES_PATH`); starter
+  rules included
+- ✅ **VirusTotal Integration** - Attachment-hash verdicts (optional, BYOK)
+- ✅ **Content Analysis** - Phishing keyword and pattern detection in
+  English **and Hebrew** (extensible per-language keyword files)
+- ✅ **WHOIS Lookup** - Domain registration information and domain-age scoring
+- ✅ **Header Analysis** - Domain mismatches, routing forensics, sender IP
 - ✅ **Risk Scoring** - Comprehensive threat assessment (0-100)
 
 ### Supported Formats
@@ -39,7 +50,9 @@ Comprehensive email analysis tool for detecting phishing, malware, and malicious
 - 📧 `.msg` files (Microsoft Outlook format)
 
 ### Platform
-- 🌐 Modern web interface
+- 🌐 Modern web interface — English and Hebrew (full RTL support)
+- 🖨️ Printable report (browser Save as PDF) + JSON export
+- 📡 Versioned REST API (`/api/v1`) with an OpenAPI 3.0 document
 - 🎨 Responsive design (mobile-friendly)
 - 🔒 Privacy-focused (all analysis is local)
 - ⚡ Fast analysis with real-time feedback
@@ -169,12 +182,20 @@ email-analyzer/
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `SECRET_KEY` | Flask secret key | - | Yes |
+| `SECRET_KEY` | Flask secret key (API is stateless; ephemeral key generated when unset) | auto | No |
 | `ABUSEIPDB_KEY` | AbuseIPDB API key | - | Optional |
+| `VIRUSTOTAL_API_KEY` | VirusTotal API key | - | Optional |
 | `PORT` | Backend port | 5000 | No |
 | `CORS_ORIGINS` | Allowed CORS origins | localhost | No |
 | `ENABLE_WHOIS` | Enable WHOIS lookups | true | No |
 | `ENABLE_ABUSEIPDB` | Enable IP reputation | true | No |
+| `ENABLE_VIRUSTOTAL` | Enable VirusTotal hash lookups | false | No |
+| `ENABLE_AUTH_VERIFICATION` | Independent SPF/DKIM verification | true | No |
+| `YARA_RULES_PATH` | Directory of .yar/.yara rules | yara_rules | No |
+| `REDIS_URL` | Shared cache + rate-limit storage (multi-worker) | in-memory | No |
+| `LOG_LEVEL` / `LOG_TO_FILE` | Logging level / opt-in file log | INFO / false | No |
+
+See `backend/.env.example` for the full annotated list.
 
 ### Frontend Configuration
 
@@ -229,7 +250,11 @@ const CONFIG = {
 
 ## 📡 API Reference
 
-### POST `/api/analyze`
+The documented base path is `/api/v1` (the unversioned `/api/*` aliases stay
+for backward compatibility). The full machine-readable contract is served at
+**`GET /api/openapi.json`** (OpenAPI 3.0).
+
+### POST `/api/v1/analyze`
 
 Analyze an email file.
 
@@ -238,6 +263,7 @@ Analyze an email file.
 - Body:
   - `emailfile` (file): .eml or .msg file
   - `abuseipdb_key` (string, optional): AbuseIPDB API key
+  - `virustotal_key` (string, optional): VirusTotal API key
 
 **Response:**
 ```json
