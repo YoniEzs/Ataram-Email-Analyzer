@@ -1,33 +1,46 @@
 # Security Policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-If you discover a security vulnerability in Ataram Email Analyzer, please report it responsibly:
+Use a [private GitHub security advisory](https://github.com/YoniEzs/Ataram-Email-Analyzer/security/advisories/new).
+Do not include a real victim email, credential, API key or personal data in a
+public issue. A sanitized proof of concept is preferred.
 
-- **Email**: support@ataram.uk
-- **GitHub**: Open a [private security advisory](https://github.com/YoniEzs/Ataram-Email-Analyzer/security/advisories/new)
+We aim to acknowledge reports within 72 hours. Response and remediation times
+depend on severity and maintainer availability; this is a best-effort
+open-source project, not a commercial SLA.
 
-Please do **not** open a public issue for security vulnerabilities.
+## Supported versions
 
-We aim to acknowledge reports within 72 hours and to release a fix as soon as practical.
+Only the newest tagged pre-release/release and the current `main` branch receive
+security fixes. No stable version has been published yet.
 
-## Scope
+## In scope
 
-Reports are welcome for anything in this repository, including:
+- EML/MSG parsing and resource exhaustion
+- SSRF and unsafe outbound requests
+- XSS or report injection
+- API-key disclosure
+- authentication-result trust and misleading verdicts
+- container and CI/CD configuration
+- dependency or build-chain compromise
 
-- The Flask backend API (file parsing, input validation, SSRF, injection)
-- The web frontend (XSS, content injection)
-- CI/CD and deployment configuration
+## Security model
 
-## Supported Versions
+- Uploaded files are hostile input and are subject to size, part, attachment,
+  archive and scan limits.
+- `Authentication-Results`, `Received` and `Return-Path` in an uploaded file are
+  attacker-controllable. Header claims do not affect scoring.
+- DKIM is independently verified when enabled. SPF and full DMARC cannot be
+  recreated from an uploaded file alone.
+- Domains and public IPs are syntactically validated before lookups. RDAP
+  redirects are restricted to public HTTPS targets.
+- The API has no built-in user authentication. Rate limiting and CORS do not
+  replace authentication or a WAF.
+- The application does not intentionally persist messages, but infrastructure
+  may buffer or log requests. See `PRIVACY.md`.
 
-Only the latest version on the `main` branch is supported with security fixes.
+## Safe testing
 
-## Design Notes for Researchers
-
-- Uploaded emails are analyzed in memory and never stored permanently.
-- Domains and IPs extracted from emails are validated against SSRF
-  (private/reserved ranges and internal TLDs are rejected) before any
-  outbound DNS/WHOIS/reputation lookups.
-- API keys (e.g. AbuseIPDB) are accepted per-request or via server
-  environment and are never logged or returned in responses.
+Use synthetic or fully sanitized samples. Do not test a public deployment with
+malware, third-party data or high request volume without explicit authorization.

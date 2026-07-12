@@ -1,27 +1,52 @@
-# Ataram Email Analyzer — one-command self-hosted deployment
-#
-#   cp .env.example .env   # then set SECRET_KEY (and optional API keys)
-#   docker compose up --build
-#
-# Frontend: http://localhost:3000
-# Backend:  http://localhost:5000
-
 services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /data:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   backend:
     build: ./backend
-    ports:
-      - "5000:5000"
+    expose:
+      - "5000"
     environment:
       FLASK_ENV: production
-      # Compose serves plain HTTP locally; put a TLS proxy in front for production
       FORCE_HTTPS: "false"
-      # Generate a key with:  python -c "import secrets; print(secrets.token_hex(32))"
-      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is missing - copy .env.example to .env and set it}"
-      ABUSEIPDB_KEY: ${ABUSEIPDB_KEY:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-      ENABLE_WHOIS: ${ENABLE_WHOIS:-true}
-      ENABLE_ABUSEIPDB: ${ENABLE_ABUSEIPDB:-true}
+      SECRET_KEY: "${SECRET_KEY:-}"
+      ABUSEIPDB_KEY: "${ABUSEIPDB_KEY:-}"
+      VIRUSTOTAL_API_KEY: "${VIRUSTOTAL_API_KEY:-}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
+      ENABLE_WHOIS: "${ENABLE_WHOIS:-true}"
+      ENABLE_ABUSEIPDB: "${ENABLE_ABUSEIPDB:-true}"
+      ENABLE_VIRUSTOTAL: "${ENABLE_VIRUSTOTAL:-false}"
+      REDIS_URL: redis://redis:6379/0
+      RATELIMIT_STORAGE_URI: redis://redis:6379/1
+      TRUST_PROXY_COUNT: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 2.0
 
   frontend:
     build: ./frontend
@@ -31,3 +56,8 @@ services:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0

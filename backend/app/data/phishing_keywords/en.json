@@ -1,0 +1,19 @@
+{
+  "urgent_phrases": [
+    "important notice", "action required", "verify your account",
+    "update your account", "password expires", "urgent", "last warning",
+    "immediate", "suspended", "locked", "unusual activity", "confirm your identity",
+    "security alert", "verify identity", "update payment", "billing problem",
+    "reactivate", "click here immediately", "act now", "limited time"
+  ],
+  "generic_greetings": [
+    "dear customer", "dear user", "dear friend", "dear client",
+    "dear member", "dear sir", "dear madam", "valued customer",
+    "valued member", "hello user"
+  ],
+  "credential_keywords": [
+    "password", "username", "login", "credentials", "credit card",
+    "ssn", "social security", "account number", "pin", "cvv",
+    "security code", "card number", "expiration date", "billing address"
+  ]
+}

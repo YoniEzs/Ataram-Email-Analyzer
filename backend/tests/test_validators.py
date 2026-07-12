@@ -4,7 +4,14 @@ Tests for input validators and API rejection of unsafe lookup targets.
 
 import pytest
 
-from app.utils.validators import validate_domain, validate_public_ip
+from app.utils.validators import validate_domain, validate_email_file, validate_public_ip
+
+
+def test_email_size_limit_is_configurable():
+    payload = b'From: a@example.com\r\n\r\nbody' + b'x' * 100
+    valid, error = validate_email_file(payload, 'mail.eml', max_bytes=32)
+    assert valid is False
+    assert 'maximum size' in error
 
 
 @pytest.mark.parametrize(
@@ -97,3 +104,21 @@ def test_check_ip_api_rejects_invalid_or_non_public_ips(client, ip):
     assert response.status_code == 400
     payload = response.get_json()
     assert payload["error"] == "Invalid IP"
+
+
+def test_analyze_url_rejects_invalid_sender_domain(client):
+    response = client.post(
+        '/api/analyze/url',
+        json={'url': 'https://example.com', 'sender_domain': 'localhost'},
+    )
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'Invalid sender domain'
+
+
+def test_analyze_url_rejects_overlong_url(client):
+    response = client.post(
+        '/api/analyze/url',
+        json={'url': 'https://example.com/' + 'x' * 5000},
+    )
+    assert response.status_code == 400
+    assert response.get_json()['error'] == 'URL too long'

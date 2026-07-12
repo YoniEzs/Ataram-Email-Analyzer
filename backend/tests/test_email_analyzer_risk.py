@@ -103,6 +103,11 @@ def test_whitelist_does_not_suppress_high_risk_signals():
     whitelisted_score, _, whitelisted_applied = service._calculate_risk_score(
         auth_analysis={"spf": "pass"},
         sender_domain="trusted.com",
+        verification={
+            'available': True,
+            'dkim': 'pass',
+            'dkim_alignment_relaxed': 'pass',
+        },
         **common_kwargs,
     )
     non_whitelisted_score, _, non_whitelisted_applied = service._calculate_risk_score(
@@ -128,6 +133,11 @@ def test_whitelist_gives_small_discount_to_low_risk_mail():
         content_analysis={'urgent_phrases': []},
         suspicions=[],
         sender_domain='trusted.com',
+        verification={
+            'available': True,
+            'dkim': 'pass',
+            'dkim_alignment_relaxed': 'pass',
+        },
     )
 
     assert whitelist_applied is True

@@ -41,3 +41,4 @@ def test_preserves_normal_top_level_message():
 
     assert result['headers']['subject'] == 'Normal message'
     assert result['body_text'].strip() == 'Normal body'
+

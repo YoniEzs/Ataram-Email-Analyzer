@@ -1,39 +1,46 @@
-# Ataram Email Analyzer - Backend Dockerfile
+# syntax=docker/dockerfile:1
 
-FROM python:3.11-slim
+# Pinned by digest; Dependabot keeps the digest current.
+FROM python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0dc86c47c0d8b3 AS builder
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-prod.txt .
+RUN python -m pip wheel --wheel-dir /wheels -r requirements-prod.txt
+
+
+FROM python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0dc86c47c0d8b3 AS runtime
+
+ENV FLASK_APP=run.py \
+    FLASK_ENV=production \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Install system dependencies (minimal set)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /wheels /wheels
+COPY requirements-prod.txt .
+RUN python -m pip install --no-index --find-links=/wheels -r requirements-prod.txt \
+    && rm -rf /wheels \
+    && groupadd --system ataram \
+    && useradd --system --gid ataram --home-dir /nonexistent ataram
 
-# Copy requirements first for layer-cache efficiency
-COPY requirements.txt .
-
-RUN pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-# Non-root user — never run as root in production
-RUN groupadd -r ataram && useradd -r -g ataram ataram \
-    && mkdir -p logs \
-    && chown -R ataram:ataram /app
+COPY --chown=ataram:ataram . .
 
 USER ataram
-
-ENV FLASK_APP=run.py
-ENV FLASK_ENV=production
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
 EXPOSE 5000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:5000/health', timeout=5).raise_for_status()"
 
-# sync workers (no gevent — not in deps and not needed for I/O-bound analysis tasks at this scale)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", \
-     "--access-logfile", "-", "--error-logfile", "-", "run:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "2", \
+     "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "run:app"]

@@ -1,26 +1,43 @@
 /**
- * Configuration
+ * Runtime configuration.
+ *
+ * The safe default is same-origin. Self-hosted nginx proxies /api and /health
+ * to the backend. Static-host deployments must set API_BASE_URL explicitly in
+ * runtime-config.js; no upload is ever sent to the project owner's server by
+ * default.
  */
 
-const CONFIG = {
-    // API endpoint - change this to your backend URL
-    API_BASE_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:5000'
-        : 'https://ataram-email-analyzer-api.onrender.com',
+const RUNTIME_CONFIG = Object.freeze(window.ATARAM_CONFIG || {});
 
-    // Endpoints
+function normalizeApiBaseUrl(value) {
+    if (!value) return '';
+    try {
+        const url = new URL(value, window.location.origin);
+        const isLocal = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+        if (url.protocol !== 'https:' && !isLocal) {
+            throw new Error('Remote API_BASE_URL must use HTTPS');
+        }
+        return url.href.replace(/\/$/, '');
+    } catch (error) {
+        console.error('Invalid ATARAM_CONFIG.API_BASE_URL:', error.message);
+        return '';
+    }
+}
+
+const CONFIG = {
+    API_BASE_URL: normalizeApiBaseUrl(RUNTIME_CONFIG.API_BASE_URL),
+
     ENDPOINTS: {
-        ANALYZE: '/api/analyze',
+        ANALYZE: '/api/v1/analyze',
         HEALTH: '/health'
     },
 
-    // File upload limits
-    MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB
+    MAX_FILE_SIZE: 25 * 1024 * 1024,
     ALLOWED_EXTENSIONS: ['eml', 'msg'],
 
-    // UI
+    REQUEST_TIMEOUT_MS: 120000,
+    HEALTH_TIMEOUT_MS: 10000,
     ANIMATION_DURATION: 300
 };
 
-// Export for use in other files
 window.CONFIG = CONFIG;

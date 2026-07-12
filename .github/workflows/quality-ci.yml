@@ -9,24 +9,89 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   whitespace:
-    name: Whitespace diff check
+    name: Whitespace and conflict markers
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
 
-      - name: Check committed whitespace
-        shell: bash
+      - name: Check whitespace
         run: |
           if [[ '${{ github.event_name }}' == 'pull_request' ]]; then
-            git diff --check HEAD^1 HEAD
-          elif git rev-parse --verify '${{ github.event.before }}' >/dev/null 2>&1; then
+            git diff --check 'origin/${{ github.base_ref }}...HEAD'
+          elif git rev-parse --verify '${{ github.event.before }}^{commit}' >/dev/null 2>&1; then
             git diff --check '${{ github.event.before }}' '${{ github.sha }}'
           else
-            git diff --check HEAD^ HEAD
+            git diff --check HEAD^
           fi
+
+      - name: Check merge markers
+        run: |
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- ':!package-lock.json'; then
+            exit 1
+          fi
+
+  dependency-audit:
+    name: Python dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements-prod.txt
+
+      - name: Audit production requirements
+        working-directory: backend
+        run: |
+          python -m pip install pip-audit==2.10.1
+          pip-audit -r requirements-prod.txt
+
+  license-report:
+    name: Dependency license report
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements-prod.txt
+
+      - name: Generate installed-package license report
+        run: |
+          python -m pip install -r backend/requirements-prod.txt pip-licenses==5.5.5
+          pip-licenses --format=markdown --with-urls --output-file=third-party-licenses.md
+
+      - name: Upload license report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: third-party-license-report
+          path: third-party-licenses.md
+          if-no-files-found: error
+          retention-days: 30
+
+  compose-config:
+    name: Docker Compose configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Validate Compose model
+        run: docker compose config --quiet
