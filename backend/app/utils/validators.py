@@ -7,6 +7,7 @@ import re
 from typing import Tuple
 
 ALLOWED_EXTENSIONS = {'eml', 'msg'}
+DEFAULT_MAX_EMAIL_BYTES = 25 * 1024 * 1024
 
 _DOMAIN_RE = re.compile(
     r'^(?:[a-z0-9](?:[a-z0-9\-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$',
@@ -16,7 +17,8 @@ _DOMAIN_RE = re.compile(
 
 def allowed_file(filename: str) -> bool:
     """Check if file extension is allowed."""
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    clean = (filename or '').strip()
+    return '.' in clean and clean.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 def validate_domain(domain: str) -> bool:
@@ -54,7 +56,11 @@ def validate_public_ip(ip: str) -> bool:
         return False
 
 
-def validate_email_file(file_data: bytes, filename: str) -> Tuple[bool, str]:
+def validate_email_file(
+    file_data: bytes,
+    filename: str,
+    max_bytes: int = DEFAULT_MAX_EMAIL_BYTES,
+) -> Tuple[bool, str]:
     """Validate email file content.
 
     Returns:
@@ -66,15 +72,22 @@ def validate_email_file(file_data: bytes, filename: str) -> Tuple[bool, str]:
     if len(file_data) < 10:
         return False, "File is too small to be a valid email"
 
-    if len(file_data) > 50 * 1024 * 1024:
-        return False, "File exceeds maximum size of 50MB"
+    if len(file_data) > max_bytes:
+        max_mb = max_bytes // (1024 * 1024)
+        return False, f"File exceeds maximum size of {max_mb}MB"
 
     ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
 
     if ext == 'eml':
         try:
-            content = file_data[:1000].decode('utf-8', errors='ignore')
-            required_indicators = ['From:', 'To:', 'Subject:', 'Date:']
+            # Real exports often start with several KB of Received:/ARC-*/
+            # DKIM-Signature headers, so scan a generous window before the
+            # From:/To:/Subject: lines show up.
+            content = file_data[:8192].decode('utf-8', errors='ignore')
+            required_indicators = [
+                'From:', 'To:', 'Subject:', 'Date:',
+                'Received:', 'Return-Path:', 'Delivered-To:',
+            ]
             if not any(indicator in content for indicator in required_indicators):
                 return False, "File does not appear to be a valid EML file"
         except Exception:

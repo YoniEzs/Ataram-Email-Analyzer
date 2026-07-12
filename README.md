@@ -1,396 +1,184 @@
 # Ataram Email Analyzer
 
-<div align="center">
-
-![Ataram Logo](frontend/src/assets/favicon.svg)
-
-**Advanced Email Security Analysis Platform**
-
-Comprehensive email analysis tool for detecting phishing, malware, and malicious content
+Experimental, self-hostable analysis of `.eml` and `.msg` files for phishing
+and malicious-email indicators.
 
 [![Backend CI](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/backend-ci.yml)
 [![Frontend CI](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/frontend-ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Flask](https://img.shields.io/badge/flask-3.1+-green.svg)](https://flask.palletsprojects.com/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[Features](#features) •
-[Quick Start](#quick-start) •
-[Documentation](#documentation) •
-[Deployment](#deployment) •
-[API](#api-reference)
+> Release status: **pre-release / experimental**. A low score means that the
+> configured checks found no strong indicators. It does not prove that a
+> message is legitimate or safe.
 
-</div>
+## What it does
 
----
+- Parses EML and Outlook MSG files.
+- Checks suspicious URLs, IDN/homograph indicators and displayed-link mismatch.
+- Inspects attachment names, magic bytes, hashes and ZIP metadata without
+  extracting archives.
+- Runs bounded YARA scans against message and attachment bytes.
+- Optionally checks sender IPs with AbuseIPDB and attachment hashes with
+  VirusTotal.
+- Looks up SPF, DKIM and DMARC DNS records and domain-registration data via RDAP.
+- Independently verifies DKIM when raw MIME bytes are available.
+- Provides an English/Hebrew interface, JSON export and printable reports.
 
-## 🎯 Features
+## Authentication trust model
 
-### Email Analysis
-- ✅ **SPF/DKIM/DMARC Validation** - Verify sender authentication
-- ✅ **IP Reputation Checking** - Integration with AbuseIPDB
-- ✅ **URL Analysis** - Detect shortened, suspicious, and phishing URLs
-- ✅ **Attachment Scanning** - Identify malicious file types and executables
-- ✅ **Content Analysis** - Phishing keyword and pattern detection
-- ✅ **WHOIS Lookup** - Domain registration information
-- ✅ **Header Analysis** - Domain mismatch detection
-- ✅ **Risk Scoring** - Comprehensive threat assessment (0-100)
+An uploaded email is not a trusted SMTP transaction. Every header in the file,
+including the topmost `Authentication-Results`, `Received` and `Return-Path`,
+can be fabricated.
 
-### Supported Formats
-- 📧 `.eml` files (Standard email format)
-- 📧 `.msg` files (Microsoft Outlook format)
+- SPF/DKIM/DMARC values copied from `Authentication-Results` are shown as
+  **untrusted header claims** and never affect the risk score.
+- DKIM signatures are verified independently against DNS and may affect the
+  score.
+- SPF cannot be reconstructed reliably without the peer IP and SMTP MAIL FROM
+  captured by a trusted receiving MTA.
+- A complete DMARC verdict also needs trusted SPF context and the domain's
+  alignment policy. The analyzer reports relaxed DKIM alignment separately.
+- DNS record presence is informational; it is not proof that a particular
+  message passed authentication.
 
-### Platform
-- 🌐 Modern web interface
-- 🎨 Responsive design (mobile-friendly)
-- 🔒 Privacy-focused (all analysis is local)
-- ⚡ Fast analysis with real-time feedback
-- ☁️ Cloud-ready (Cloudflare Pages + Render)
+## Quick start with Docker
 
----
-
-## 🚀 Quick Start
-
-### Run with Docker Compose (Easiest)
+Requirements: Docker Engine with Compose v2.
 
 ```bash
 git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
 cd Ataram-Email-Analyzer
 cp .env.example .env
-# Set SECRET_KEY in .env:
-#   python -c "import secrets; print(secrets.token_hex(32))"
 docker compose up --build
 ```
 
-Then open http://localhost:3000 — the API runs at http://localhost:5000.
+Open `http://localhost:3000`. The browser uses same-origin `/api` requests;
+nginx proxies them to the backend. Redis is included for shared rate limits and
+lookup caches. The backend is not published directly to the host.
 
-### Deploy to Production
+Optional API keys can be placed in `.env` or entered per request in the UI:
 
-**🎯 [Follow detailed deployment guide](CLOUDFLARE_RENDER_DEPLOYMENT.md)**
-
-1. **Fork or push this repo to GitHub**
-
-2. **Deploy Backend to Render** ([render.com](https://render.com))
-   - Create Web Service from GitHub
-   - Use `render.yaml` configuration
-   - Add your API keys
-
-3. **Deploy Frontend to Cloudflare Pages** ([dash.cloudflare.com](https://dash.cloudflare.com))
-   - Create Pages project from GitHub
-   - Build output: `frontend/src`
-   - Add your custom domain
-
-### Test Locally
-
-#### Backend
-
-1. **Install Python 3.11+**
-
-2. **Setup backend**
-   ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate
-   # On Windows: venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-3. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your settings
-   ```
-
-4. **Run backend**
-   ```bash
-   python run.py
-   ```
-
-#### Frontend
-
-1. **Serve frontend**
-   ```bash
-   cd frontend/src
-   # Using Python
-   python -m http.server 3000
-
-   # Or using Node.js
-   npx http-server -p 3000
-   ```
-
-2. **Access** http://localhost:3000
-
----
-
-## 📚 Documentation
-
-### Project Structure
-
-```
-email-analyzer/
-|-- backend/                      # Flask API backend
-|   |-- app/
-|   |   |-- api/                 # API endpoints
-|   |   |-- services/            # Analysis services
-|   |   |-- utils/               # Validation/extraction/cache utilities
-|   |   |-- __init__.py          # App factory
-|   |   `-- config.py            # Configuration
-|   |-- tests/                   # Backend and contract tests
-|   |-- run.py                   # Entry point
-|   |-- requirements.txt         # Dependencies
-|   |-- .env.example             # Environment template
-|   `-- Dockerfile               # Docker config
-|-- frontend/                    # Web interface
-|   |-- src/
-|   |   |-- index.html           # Main HTML
-|   |   |-- css/                 # Stylesheets
-|   |   |-- js/                  # JavaScript
-|   |   `-- assets/              # Images/icons
-|   |-- Dockerfile
-|   |-- nginx.conf
-|   `-- wrangler.toml
-|-- docker-compose.yml           # One-command self-hosted deployment
-|-- render.yaml                  # Render deployment config
-`-- README.md                    # This file
+```dotenv
+ABUSEIPDB_KEY=
+VIRUSTOTAL_API_KEY=
+ENABLE_VIRUSTOTAL=false
 ```
 
-### Architecture
+Before uploading sensitive material, read [PRIVACY.md](PRIVACY.md) and
+[DISCLAIMER.md](DISCLAIMER.md).
 
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────────┐
-│   Browser   │ ◄─────► │   Frontend   │ ◄─────► │  Backend API    │
-│  (Client)   │  HTTPS  │   (Nginx)    │   API   │    (Flask)      │
-└─────────────┘         └──────────────┘         └─────────────────┘
-                                                           │
-                                                           ▼
-                                        ┌──────────────────────────────┐
-                                        │  External Services:          │
-                                        │  • DNS (SPF/DKIM/DMARC)     │
-                                        │  • AbuseIPDB (IP Reputation)│
-                                        │  • WHOIS (Domain Info)      │
-                                        └──────────────────────────────┘
-```
+## Development
 
----
-
-## 🔧 Configuration
-
-### Backend Environment Variables
-
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `SECRET_KEY` | Flask secret key | - | Yes |
-| `ABUSEIPDB_KEY` | AbuseIPDB API key | - | Optional |
-| `PORT` | Backend port | 5000 | No |
-| `CORS_ORIGINS` | Allowed CORS origins | localhost | No |
-| `FORCE_HTTPS` | Redirect HTTP → HTTPS | true | No |
-| `ENABLE_WHOIS` | Enable WHOIS lookups | true | No |
-| `ENABLE_ABUSEIPDB` | Enable IP reputation | true | No |
-| `WHITELIST_DOMAINS` | Trusted sender domains | empty | No |
-
-### Frontend Configuration
-
-Edit `frontend/src/js/config.js`:
-
-```javascript
-const CONFIG = {
-    API_BASE_URL: 'https://api.ataram.uk',  // Your backend URL
-    MAX_FILE_SIZE: 50 * 1024 * 1024        // 50MB
-};
-```
-
----
-
-## 🌐 Deployment
-
-### Cloudflare Pages + Render (Recommended)
-
-**Free tier available for both platforms!**
-
-#### Backend - Render
-- ✅ Free SSL certificates
-- ✅ Automatic deployments from GitHub
-- ✅ Easy environment variable management
-- ⚠️ Free tier sleeps after 15min inactivity
-
-#### Frontend - Cloudflare Pages
-- ✅ Unlimited bandwidth (free)
-- ✅ Global CDN
-- ✅ Instant deployments
-- ✅ Custom domain support
-
-**📖 Complete deployment guide**: [CLOUDFLARE_RENDER_DEPLOYMENT.md](CLOUDFLARE_RENDER_DEPLOYMENT.md)
-
-### Quick Deployment Steps
-
-1. **Deploy Backend** → [render.com](https://render.com)
-   - Connect GitHub repo
-   - Use `render.yaml` configuration
-   - Set environment variables
-
-2. **Deploy Frontend** → [dash.cloudflare.com](https://dash.cloudflare.com)
-   - Create Pages project
-   - Output directory: `frontend/src`
-   - Connect custom domain
-
-3. **Configure DNS**
-   - `ataram.uk` → Cloudflare Pages
-   - `api.ataram.uk` → Render backend
-
----
-
-## 📡 API Reference
-
-### POST `/api/analyze`
-
-Analyze an email file.
-
-**Request:**
-- Content-Type: `multipart/form-data`
-- Body:
-  - `emailfile` (file): .eml or .msg file
-  - `abuseipdb_key` (string, optional): AbuseIPDB API key
-
-**Response:**
-```json
-{
-  "timestamp": "2026-03-09T12:00:00",
-  "risk_assessment": {
-    "score": 75,
-    "level": "high",
-    "verdict": "SUSPICIOUS - Exercise extreme caution",
-    "whitelist_applied": false
-  },
-  "headers": {
-    "sender": "sender@example.com",
-    "subject": "Email subject",
-    "date": "Mon, 09 Mar 2026 09:00:00 +0000"
-  },
-  "authentication": {
-    "spf": "v=spf1 ...",
-    "dmarc": "v=DMARC1 ...",
-    "auth_analysis": {
-      "spf": "pass",
-      "dkim": "pass",
-      "dmarc": "pass"
-    }
-  },
-  "routing_forensics": {
-    "public_ips": ["93.184.216.34"],
-    "hop_count": 5,
-    "originating_ip": "93.184.216.34",
-    "timezone_offset": "+0000"
-  },
-  "urls": {
-    "total_count": 5,
-    "suspicious_count": 2,
-    "urls": []
-  },
-  "attachments": {
-    "total_count": 1,
-    "suspicious_count": 0,
-    "attachments": []
-  },
-  "suspicions": [],
-  "metadata": {
-    "filename": "sample.eml",
-    "analyzed_at": "2026-03-09T12:00:00",
-    "version": "2.0"
-  }
-}
-```
-
-### GET `/health`
-
-Check API health status.
-
-**Response:**
-```json
-{
-  "status": "healthy",
-  "service": "Email Analyzer API"
-}
-```
-
----
-
-## 🔒 Security
-
-- All email analysis is performed server-side
-- Email content is never stored permanently
-- API keys are never exposed to the client
-- CORS protection prevents unauthorized access
-- File type validation prevents malicious uploads
-- Rate limiting (when enabled) prevents abuse
-
----
-
-## 🛠️ Development
-
-### Running Tests
+Backend:
 
 ```bash
 cd backend
-pytest
-pytest --cov=app tests/
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python -m pip install -r requirements-dev.txt
+pytest -q --cov=app --cov-fail-under=65
+ruff check app tests
+mypy
 ```
 
-### Code Quality
+Frontend:
 
 ```bash
-# Linting
-flake8 app/
-pylint app/
-
-# Type checking
-mypy app/
+cd frontend
+npm ci
+npm run check
+npx playwright install chromium
+python -m http.server 8765 --directory src
+# In another shell:
+SMOKE_BASE_URL=http://localhost:8765 npm run test:e2e
 ```
 
----
+For a frontend hosted separately from the backend, copy and edit
+`frontend/src/runtime-config.js`:
 
-## 📝 License
+```javascript
+window.ATARAM_CONFIG = { API_BASE_URL: 'https://api.example.com' };
+```
 
-Copyright © 2024 Ataram Security Platform
+There is deliberately no fallback to an Ataram/Render server. An empty runtime
+configuration always means same-origin.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Resource limits
 
----
+Defaults are designed for public-facing hostile input:
 
-## 🤝 Contributing
+| Limit | Default |
+|---|---:|
+| Upload | 25 MB |
+| MIME parts | 250 |
+| Attachments | 100 |
+| One attachment | 10 MB |
+| Total attachment bytes | 20 MB |
+| Text processed | 2,000,000 characters per body representation |
+| URLs analyzed | 500, with 4,096 characters retained per URL |
+| Bytes passed to each YARA scan | 8 MB |
+| ZIP members inspected | 100 |
+| ZIP declared uncompressed bytes | 200 MB |
+| ZIP compression-ratio threshold | 100:1 |
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+All limits can be changed with the variables documented in
+`backend/.env.example`. Raising them increases denial-of-service risk.
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+## External data flow
 
----
+The backend does not intentionally persist uploaded messages in a database or
+file. Hosting platforms, reverse proxies and operating systems can still buffer
+requests temporarily. Optional lookups disclose limited indicators:
 
-## 📧 Contact
+| Service | Data sent |
+|---|---|
+| DNS resolver | Sender/signing domains and selectors |
+| RDAP servers | Sender domain |
+| AbuseIPDB | Header-derived public IP and the configured API key |
+| VirusTotal | SHA-256 attachment hashes and the configured API key; not attachment bytes |
 
-- Website: [ataram.uk](https://ataram.uk)
-- GitHub: [@YoniEzs](https://github.com/YoniEzs)
-- Email: support@ataram.uk
+See [PRIVACY.md](PRIVACY.md) for the full model and instructions for an offline
+deployment.
 
-Found a security issue? Please follow the [security policy](SECURITY.md) instead of opening a public issue.
+## API
 
----
+The versioned base path is `/api/v1`; `/api/*` remains a compatibility alias.
+OpenAPI 3.0 is served at `/api/openapi.json` and `/api/v1/openapi.json`.
 
-## 🙏 Acknowledgments
+Primary endpoint:
 
-- [Flask](https://flask.palletsprojects.com/) - Web framework
-- [AbuseIPDB](https://www.abuseipdb.com/) - IP reputation database
-- [BeautifulSoup](https://www.crummy.com/software/BeautifulSoup/) - HTML parsing
-- All open-source contributors
+```text
+POST /api/v1/analyze
+Content-Type: multipart/form-data
+emailfile: required .eml or .msg
+abuseipdb_key: optional
+virustotal_key: optional
+```
 
----
+The API is unauthenticated by default. CORS is only a browser policy and is not
+access control. Put internet-facing deployments behind an authentication layer
+or WAF, use Redis-backed rate limiting, and restrict allowed origins.
 
-<div align="center">
+## Deployment
 
-**Built with ❤️ by the Ataram Security Team**
+- Docker Compose: same-origin frontend/backend and Redis, suitable for local or
+  controlled self-hosting.
+- Render: `render.yaml` provisions a web service and private Key Value instance;
+  `autoDeployTrigger: checksPass` waits for CI.
+- Separate static frontend: set `runtime-config.js` explicitly and configure
+  backend `CORS_ORIGINS`.
 
-[⬆ Back to Top](#ataram-email-analyzer)
+See [CLOUDFLARE_RENDER_DEPLOYMENT.md](CLOUDFLARE_RENDER_DEPLOYMENT.md).
 
-</div>
+## Security and releases
+
+- Vulnerabilities: [SECURITY.md](SECURITY.md)
+- Contribution process: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Release gates: [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
+- Current roadmap: [ROADMAP.md](ROADMAP.md)
+- Third-party dependencies: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+
+## License
+
+Project-authored code is available under the [MIT License](LICENSE). Dependencies
+keep their own licenses; review `THIRD_PARTY_NOTICES.md` before redistribution.

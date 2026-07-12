@@ -23,26 +23,61 @@ class Config:
     # Server
     PORT = int(os.environ.get('PORT', 5000))
     HOST = os.environ.get('HOST', '0.0.0.0')
+    TRUST_PROXY_COUNT = int(os.environ.get('TRUST_PROXY_COUNT', 0))
 
-    # CORS
-    CORS_ORIGINS = os.environ.get(
-        'CORS_ORIGINS', 'http://localhost:3000,https://ataram.uk'
-    ).split(',')
+    # CORS. This is a browser policy, not authentication. Production
+    # deployments should explicitly list their frontend origins.
+    CORS_ORIGINS = [
+        origin.strip()
+        for origin in os.environ.get(
+            'CORS_ORIGINS', 'http://localhost:3000'
+        ).split(',')
+        if origin.strip()
+    ]
 
-    # File upload
-    MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
+    # File and parser resource limits. Uploaded mail is hostile input; these
+    # bounds limit memory/CPU amplification before deeper analysis begins.
+    MAX_CONTENT_LENGTH = int(os.environ.get('MAX_UPLOAD_BYTES', 25 * 1024 * 1024))
     UPLOAD_ALLOWED_EXTENSIONS = {'eml', 'msg'}
+    MAX_MIME_PARTS = int(os.environ.get('MAX_MIME_PARTS', 250))
+    MAX_ATTACHMENTS = int(os.environ.get('MAX_ATTACHMENTS', 100))
+    MAX_ATTACHMENT_BYTES = int(
+        os.environ.get('MAX_ATTACHMENT_BYTES', 10 * 1024 * 1024)
+    )
+    MAX_TOTAL_ATTACHMENT_BYTES = int(
+        os.environ.get('MAX_TOTAL_ATTACHMENT_BYTES', 20 * 1024 * 1024)
+    )
+    MAX_TEXT_CHARS = int(os.environ.get('MAX_TEXT_CHARS', 2_000_000))
+    MAX_URLS = int(os.environ.get('MAX_URLS', 500))
+    MAX_URL_LENGTH = int(os.environ.get('MAX_URL_LENGTH', 4096))
+    MAX_YARA_SCAN_BYTES = int(
+        os.environ.get('MAX_YARA_SCAN_BYTES', 8 * 1024 * 1024)
+    )
+    MAX_ARCHIVE_MEMBERS = int(os.environ.get('MAX_ARCHIVE_MEMBERS', 100))
+    MAX_ARCHIVE_UNCOMPRESSED_BYTES = int(
+        os.environ.get('MAX_ARCHIVE_UNCOMPRESSED_BYTES', 200 * 1024 * 1024)
+    )
+    MAX_ARCHIVE_RATIO = int(os.environ.get('MAX_ARCHIVE_RATIO', 100))
 
-    # YARA Rules
-    YARA_RULES_PATH = os.environ.get('YARA_RULES_PATH', 'yara_rules')
-
-    # HTTPS enforcement — disable only when serving plain HTTP on purpose
-    # (e.g. self-hosted docker-compose without a TLS-terminating proxy)
-    FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'true').lower() == 'true'
+    # YARA Rules — relative paths resolve against the backend root
+    _yara_path = os.environ.get('YARA_RULES_PATH', 'yara_rules')
+    YARA_RULES_PATH = (
+        _yara_path
+        if os.path.isabs(_yara_path)
+        else os.path.abspath(os.path.join(basedir, '..', _yara_path))
+    )
 
     # Rate limiting
     RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'true').lower() == 'true'
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', '100 per hour')
+    # Shared storage for rate-limit counters. With multiple gunicorn workers
+    # the in-memory default keeps a separate counter per worker — point this
+    # at Redis (redis://host:6379) in production. Falls back to REDIS_URL.
+    RATELIMIT_STORAGE_URI = (
+        os.environ.get('RATELIMIT_STORAGE_URI')
+        or os.environ.get('REDIS_URL')
+        or 'memory://'
+    )
 
     # Timeouts
     DNS_TIMEOUT = int(os.environ.get('DNS_TIMEOUT', 5))
@@ -53,6 +88,15 @@ class Config:
     ENABLE_WHOIS = os.environ.get('ENABLE_WHOIS', 'true').lower() == 'true'
     ENABLE_ABUSEIPDB = os.environ.get('ENABLE_ABUSEIPDB', 'true').lower() == 'true'
     ENABLE_VIRUSTOTAL = os.environ.get('ENABLE_VIRUSTOTAL', 'false').lower() == 'true'
+    # Independent DKIM verification. SPF/DMARC cannot be reconstructed from
+    # untrusted headers in an uploaded file and are displayed as claims only.
+    ENABLE_AUTH_VERIFICATION = (
+        os.environ.get('ENABLE_AUTH_VERIFICATION', 'true').lower() == 'true'
+    )
+
+    # HTTPS is normally terminated by the application or an upstream proxy.
+    # Plain-HTTP local Compose deployments explicitly disable this.
+    FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'true').lower() == 'true'
 
     # Trusted sender domain whitelist — empty by default.
     # The old default included gmail.com/outlook.com/etc., which are frequently
@@ -65,8 +109,10 @@ class Config:
         if d.strip()
     ]
 
-    # Logging
+    # Logging — stdout is the default sink; set LOG_TO_FILE=true for a
+    # rotating file log under logs/ as well.
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
+    LOG_TO_FILE = os.environ.get('LOG_TO_FILE', 'false').lower() == 'true'
 
 
 class DevelopmentConfig(Config):

@@ -1,0 +1,17 @@
+{
+  "name": "ataram-email-analyzer-frontend",
+  "version": "0.1.0-rc.1",
+  "private": true,
+  "description": "Static frontend and browser smoke tests for Ataram Email Analyzer",
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/js/*.js",
+    "test:e2e": "node tests/smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

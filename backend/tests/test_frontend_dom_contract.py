@@ -12,6 +12,7 @@ REQUIRED_IDS = {
     "dropZone",
     "fileInput",
     "apiKeyInput",
+    "apiDestination",
     "progressBar",
     "progressStep",
     "resultsSection",
@@ -20,13 +21,17 @@ REQUIRED_IDS = {
     "retryButton",
     "exportBar",
     "downloadReportBtn",
+    "printReportBtn",
     "historySection",
     "historyList",
     "historyDisclosure",
     "clearHistoryBtn",
+    "langToggle",
 }
 
 EXPECTED_SCRIPT_ORDER = [
+    "runtime-config.js",
+    "js/i18n.js",
     "js/config.js",
     "js/api.js",
     "js/ui.js",

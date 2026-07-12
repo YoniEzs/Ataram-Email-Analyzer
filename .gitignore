@@ -31,6 +31,8 @@ venv/
 env/
 ENV/
 .venv
+.deps/
+node_modules/
 
 # IDEs
 .vscode/
@@ -56,9 +58,6 @@ htmlcov/
 .hypothesis/
 coverage.xml
 *.cover
-
-# Docker
-.dockerignore
 
 # OS
 Thumbs.db

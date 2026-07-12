@@ -36,10 +36,10 @@ class DNSCheckerService:
             answers = dns.resolver.resolve(domain, 'TXT', lifetime=self.timeout)
             records = []
             for rdata in answers:
-                txt = rdata.to_text()
-                # Remove surrounding quotes
-                if txt.startswith('"') and txt.endswith('"'):
-                    txt = txt[1:-1]
+                # Long TXT records are split into multiple <=255-byte strings;
+                # join them (to_text() would leave '" "' separators inside).
+                chunks = getattr(rdata, 'strings', ())
+                txt = b''.join(chunks).decode('utf-8', errors='replace')
                 records.append(txt)
             result = records if records else None
             cache_set(f"dns:{domain}", result, 3600)
@@ -80,11 +80,25 @@ class DNSCheckerService:
         match = re.search(r'\bs=([A-Za-z0-9._-]+)', dkim_signature)
         return match.group(1) if match else None
 
+    def parse_dkim_domain(self, dkim_signature: str) -> Optional[str]:
+        """Extract signing domain (d= tag) from DKIM-Signature header"""
+        if not dkim_signature:
+            return None
+        match = re.search(r'\bd=([A-Za-z0-9._-]+)', dkim_signature)
+        return match.group(1) if match else None
+
     def check_dkim(self, domain: str, selector: Optional[str]) -> Optional[str]:
-        """Check DKIM record for domain and selector"""
+        """Check DKIM record for domain and selector.
+
+        Only returns TXT records that carry a public-key tag (p=), so a
+        random TXT record at the _domainkey name isn't mistaken for a key.
+        """
         if not domain or not selector:
             return None
 
         dkim_domain = f"{selector}._domainkey.{domain}"
         records = self.get_txt_records(dkim_domain) or []
-        return records[0] if records else None
+        for record in records:
+            if re.search(r'(?:^|;)\s*p=', record):
+                return record
+        return None

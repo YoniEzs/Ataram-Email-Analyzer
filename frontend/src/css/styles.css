@@ -181,3 +181,95 @@ footer {
     color: var(--text-muted);
     font-size: 0.875rem;
 }
+/* ============================================================
+   Language toggle + RTL support (Hebrew)
+   ============================================================ */
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.lang-toggle {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.9rem;
+    white-space: nowrap;
+}
+
+[dir="rtl"] body,
+[dir="rtl"] {
+    direction: rtl;
+}
+
+[dir="rtl"] .data-table th,
+[dir="rtl"] .data-table td {
+    text-align: right;
+}
+
+[dir="rtl"] .data-table th {
+    padding-right: 0;
+    padding-left: 1rem;
+}
+
+[dir="rtl"] #exportBar {
+    text-align: left;
+}
+
+/* Values that must stay left-to-right even in an RTL page */
+[dir="rtl"] .data-table td code,
+[dir="rtl"] .url-link,
+[dir="rtl"] .url-domain,
+[dir="rtl"] .hop-item,
+[dir="rtl"] .attachment-name,
+[dir="rtl"] .attachment-meta {
+    direction: ltr;
+    unicode-bidi: embed;
+    text-align: right;
+}
+
+/* ============================================================
+   Print styles — "Print Report" renders results only
+   (use the browser's Save as PDF for a file)
+   ============================================================ */
+
+@media print {
+    .header,
+    .upload-section,
+    .features-section,
+    .footer,
+    #historySection,
+    #exportBar,
+    #errorSection,
+    #progressBar {
+        display: none !important;
+    }
+
+    body {
+        background: #fff !important;
+        color: #000 !important;
+    }
+
+    #resultsSection {
+        display: block !important;
+    }
+
+    .results-grid {
+        display: block !important;
+    }
+
+    .result-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        border: 1px solid #bbb !important;
+        background: #fff !important;
+        margin-bottom: 1rem;
+        box-shadow: none !important;
+    }
+
+    .risk-banner {
+        border: 2px solid #000 !important;
+        background: #fff !important;
+        color: #000 !important;
+    }
+}

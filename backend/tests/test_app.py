@@ -33,3 +33,31 @@ def test_404_error(client):
     """Test that 404 errors are handled"""
     response = client.get('/nonexistent')
     assert response.status_code == 404
+
+
+def test_404_returns_json(client):
+    response = client.get('/nonexistent')
+    payload = response.get_json()
+    assert payload is not None
+    assert payload['error'] == 'Not found'
+
+
+def test_405_returns_json(client):
+    response = client.delete('/health')
+    assert response.status_code == 405
+    payload = response.get_json()
+    assert payload is not None
+    assert payload['error'] == 'Method not allowed'
+
+
+def test_413_returns_json(app, client):
+    app.config['MAX_CONTENT_LENGTH'] = 1024
+    response = client.post(
+        '/api/analyze',
+        data={'emailfile': (__import__('io').BytesIO(b'x' * 4096), 'big.eml')},
+        content_type='multipart/form-data',
+    )
+    assert response.status_code == 413
+    payload = response.get_json()
+    assert payload is not None
+    assert payload['error'] == 'File too large'

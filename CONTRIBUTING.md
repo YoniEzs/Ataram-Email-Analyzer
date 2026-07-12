@@ -1,81 +1,30 @@
-# Contributing to Ataram Email Analyzer
+# Contributing
 
-Thank you for your interest in contributing to Ataram Email Analyzer!
+Thank you for improving Ataram Email Analyzer.
 
-## How to Contribute
+## Before opening an issue
 
-### Reporting Issues
+- Use synthetic or sanitized samples only.
+- Never attach a real credential, API key, victim email or customer data.
+- Report vulnerabilities with a private security advisory, not a public issue.
+- State the version, operating system, deployment method and minimal steps to
+  reproduce.
 
-- Use GitHub Issues to report bugs
-- Include detailed steps to reproduce
-- Provide email sample files if possible (sanitized)
-- Include your environment details
+## Pull requests
 
-### Pull Requests
+1. Create a focused branch from current `main`.
+2. Add or update tests for behavior changes.
+3. Update the trust/privacy documentation when data flow changes.
+4. Run the checks in `RELEASE_CHECKLIST.md`.
+5. Open a draft PR and complete the template.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Run tests: `pytest` (backend)
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
+Backend code targets Python 3.11+, uses type hints and is checked by Ruff and
+mypy. Frontend code is dependency-light vanilla JavaScript and must keep the
+DOM contract and Playwright smoke test green.
 
-### Code Style
+Do not weaken resource limits, SSRF checks, escaping, container isolation or
+authentication trust boundaries without a documented threat-model change.
 
-**Backend (Python):**
-- Follow PEP 8
-- Use type hints where appropriate
-- Add docstrings to functions
-- Write tests for new features
-
-**Frontend (JavaScript):**
-- Use ES6+ features
-- Keep functions small and focused
-- Comment complex logic
-- Test in multiple browsers
-
-### Development Setup
-
-```bash
-# Backend
-cd backend
-python -m venv venv
-source venv/bin/activate
-# On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-pip install pytest pytest-cov
-
-# Run tests
-pytest
-
-# Frontend
-cd frontend/src
-python -m http.server 3000
-```
-
-### Commit Messages
-
-- Use clear, descriptive commit messages
-- Start with a verb (Add, Fix, Update, etc.)
-- Reference issue numbers when applicable
-
-Examples:
-- `Add URL shortener detection`
-- `Fix SPF record parsing bug (#123)`
-- `Update documentation for deployment`
-
-## Code of Conduct
-
-- Be respectful and inclusive
-- Welcome newcomers
-- Focus on constructive feedback
-- Help maintain a positive community
-
-## Questions?
-
-Feel free to open an issue for questions or reach out to support@ataram.uk
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your project-authored contribution is licensed
+under the MIT License and that you have the right to submit it. Do not copy code
+under an incompatible license.

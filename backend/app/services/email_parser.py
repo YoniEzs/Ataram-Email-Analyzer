@@ -3,10 +3,11 @@ Email Parser Service
 Handles parsing of EML and MSG files
 """
 
-import io
 import logging
 import mimetypes
 import os
+import re
+from datetime import datetime
 from email import policy
 from email.header import decode_header, make_header
 from email.parser import BytesParser
@@ -14,19 +15,51 @@ from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
+try:
+    from bs4 import BeautifulSoup
+    BS4_AVAILABLE = True
+except ImportError:
+    BS4_AVAILABLE = False
+
+
+def html_to_text(html: str) -> str:
+    """Derive readable plain text from HTML for language analysis."""
+    if not html:
+        return ""
+    if BS4_AVAILABLE:
+        try:
+            return BeautifulSoup(html, 'html.parser').get_text(separator=' ', strip=True)
+        except Exception as e:
+            logger.debug(f"[email_parser] HTML-to-text failed: {e}")
+    # Crude fallback: strip tags
+    return re.sub(r'<[^>]+>', ' ', html)
+
 
 class EmailParserService:
     """Service for parsing email files"""
 
-    def __init__(self):
-        self.extract_msg = self._import_extract_msg()
+    def __init__(
+        self,
+        *,
+        max_mime_parts: int = 250,
+        max_attachments: int = 100,
+        max_attachment_bytes: int = 10 * 1024 * 1024,
+        max_total_attachment_bytes: int = 20 * 1024 * 1024,
+        max_text_chars: int = 2_000_000,
+    ):
+        self.oxmsg_message = self._import_oxmsg_message()
+        self.max_mime_parts = max_mime_parts
+        self.max_attachments = max_attachments
+        self.max_attachment_bytes = max_attachment_bytes
+        self.max_total_attachment_bytes = max_total_attachment_bytes
+        self.max_text_chars = max_text_chars
 
     @staticmethod
-    def _import_extract_msg():
-        """Lazy import of extract_msg"""
+    def _import_oxmsg_message():
+        """Lazy import of the MIT-licensed python-oxmsg parser."""
         try:
-            import extract_msg
-            return extract_msg
+            from oxmsg import Message
+            return Message
         except ImportError:
             return None
 
@@ -89,11 +122,23 @@ class EmailParserService:
                     continue
                 payload = part.get_payload()
                 if isinstance(payload, list) and payload:
-                    msg = payload[0]
+                    msg = payload[0]  # type: ignore[assignment]
                     break
+
+        part_count = sum(1 for _ in msg.walk())
+        if part_count > self.max_mime_parts:
+            raise ValueError(
+                f'Email contains {part_count} MIME parts; maximum is '
+                f'{self.max_mime_parts}'
+            )
 
         def h(name: str) -> str:
             return self.decode_header(msg.get(name, ""))
+
+        # Authentication-Results is useful context, but an uploaded EML is not
+        # a trusted transport channel: every header (including the first one)
+        # can be forged. The analyzer therefore exposes these as claims only.
+        auth_headers = [self.decode_header(x) for x in (msg.get_all("Authentication-Results", []) or [])]
 
         headers = {
             "sender": h("From"),
@@ -101,7 +146,8 @@ class EmailParserService:
             "reply_to": h("Reply-To"),
             "date": h("Date"),
             "subject": h("Subject"),
-            "auth_results": " | ".join([self.decode_header(x) for x in (msg.get_all("Authentication-Results", []) or [])]),
+            "auth_results": " | ".join(auth_headers),
+            "auth_results_top": auth_headers[0] if auth_headers else "",
             "hops": [self.decode_header(x) for x in (msg.get_all("Received", []) or [])],
             "dkim_signature": h("DKIM-Signature"),
             "return_path": h("Return-Path"),
@@ -110,8 +156,10 @@ class EmailParserService:
 
         # Extract body parts
         body_parts = self._get_body_parts(msg)
-        body_text = "\n".join(body_parts.get('plain', []))
-        body_html = "\n".join(body_parts.get('html', []))
+        body_text = "\n".join(body_parts.get('plain', []))[:self.max_text_chars]
+        body_html = "\n".join(body_parts.get('html', []))[:self.max_text_chars]
+        if not body_text.strip() and body_html:
+            body_text = html_to_text(body_html)
 
         # Extract attachments
         attachments = self._extract_attachments_eml(msg)
@@ -121,62 +169,69 @@ class EmailParserService:
             'body_text': body_text,
             'body_html': body_html,
             'attachments': attachments,
-            'msg_object': msg
+            # Raw message bytes for signature verification (DKIM). Internal
+            # only — stripped by the analyzer, never serialized to JSON.
+            'raw_bytes': data,
         }
 
     def _parse_msg(self, data: bytes) -> Dict[str, Any]:
         """Parse MSG format email (Outlook)"""
-        if self.extract_msg is None:
+        if self.oxmsg_message is None:
             return {
-                'error': 'extract_msg not installed. Install via: pip install extract_msg olefile'
+                'error': 'python-oxmsg not installed. Install via: pip install python-oxmsg'
             }
 
-        with io.BytesIO(data) as bio:
-            bio.name = "upload.msg"
-            m = self.extract_msg.Message(bio)
+        m = self.oxmsg_message.load(data)
+        normalized_headers = {
+            str(name).lower(): self.decode_header(str(value))
+            for name, value in (m.message_headers or {}).items()
+        }
 
-            # Try to get raw headers
-            raw_hdr = ""
-            for cand in ("header", "transportHeaders"):
-                if hasattr(m, cand) and getattr(m, cand):
-                    raw_hdr = getattr(m, cand)
-                    break
+        def pick(name: str, fallback: str = "") -> str:
+            return normalized_headers.get(name.lower()) or fallback
 
-            from email.parser import Parser
-            hdr_msg = Parser(policy=policy.default).parsestr(raw_hdr) if raw_hdr else None
+        recipients = ", ".join(
+            recipient.email_address or recipient.name
+            for recipient in (m.recipients or ())
+            if recipient.email_address or recipient.name
+        )
+        date_value = m.sent_date
+        date_str = (
+            date_value.isoformat()
+            if isinstance(date_value, datetime)
+            else str(date_value or "")
+        )
+        auth_claim = pick("Authentication-Results", "")
 
-            def pick(name: str, fallback: str = "") -> str:
-                if hdr_msg and hdr_msg.get(name):
-                    return self.decode_header(hdr_msg.get(name))
-                return fallback
+        headers = {
+            "sender": pick("From", m.sender or ""),
+            "recipients": pick("To", recipients),
+            "reply_to": pick("Reply-To", ""),
+            "date": pick("Date", date_str),
+            "subject": pick("Subject", m.subject or ""),
+            "auth_results": auth_claim,
+            "auth_results_top": auth_claim,
+            "hops": [pick("Received")] if pick("Received") else [],
+            "dkim_signature": pick("DKIM-Signature", ""),
+            "return_path": pick("Return-Path", ""),
+            "message_id": pick("Message-ID", ""),
+        }
 
-            headers = {
-                "sender": pick("From", m.sender or ""),
-                "recipients": pick("To", ", ".join(m.to or []) + ((", " + ", ".join(m.cc or [])) if m.cc else "")),
-                "reply_to": pick("Reply-To", ""),
-                "date": pick("Date", m.date or ""),
-                "subject": pick("Subject", m.subject or ""),
-                "auth_results": pick("Authentication-Results", ""),
-                "hops": [self.decode_header(x) for x in ((hdr_msg.get_all("Received") if hdr_msg else []) or [])],
-                "dkim_signature": pick("DKIM-Signature", ""),
-                "return_path": pick("Return-Path", ""),
-                "message_id": pick("Message-ID", getattr(m, "internetMessageId", "") or m.message_id or ""),
-            }
+        body_html = str(m.html_body or "")[:self.max_text_chars]
+        body_text = str(m.body or "")[:self.max_text_chars]
+        if not body_text.strip() and body_html:
+            body_text = html_to_text(body_html)[:self.max_text_chars]
 
-            body_html = m.htmlBody or ""
-            body_text = (m.body or "") if not body_html else ""
+        attachments = self._extract_attachments_msg(m)
 
-            # Extract attachments
-            attachments = self._extract_attachments_msg(m)
+        return {
+            'headers': headers,
+            'body_text': body_text,
+            'body_html': body_html,
+            'attachments': attachments,
+        }
 
-            return {
-                'headers': headers,
-                'body_text': body_text,
-                'body_html': body_html,
-                'attachments': attachments
-            }
-
-    def _get_body_parts(self, msg) -> Dict[str, List[str]]:
+    def _get_body_parts(self, msg: Any) -> Dict[str, List[str]]:
         """Extract text and HTML parts from EML message"""
         parts: Dict[str, List[str]] = {"plain": [], "html": []}
 
@@ -202,10 +257,11 @@ class EmailParserService:
 
         return parts
 
-    def _extract_attachments_eml(self, msg) -> List[Dict[str, Any]]:
+    def _extract_attachments_eml(self, msg: Any) -> List[Dict[str, Any]]:
         """Extract attachments from EML message"""
         attachments: List[Dict[str, Any]] = []
 
+        total_bytes = 0
         for part in msg.walk():
             disp = part.get('Content-Disposition', '') or ''
             if not disp or 'attachment' not in disp.lower():
@@ -217,33 +273,72 @@ class EmailParserService:
 
             content_type = part.get_content_type() or ''
             ext = os.path.splitext(filename.lower())[1].lstrip('.')
+            payload = part.get_payload(decode=True) or b''
+
+            if len(attachments) >= self.max_attachments:
+                raise ValueError(
+                    f'Email exceeds the maximum of {self.max_attachments} attachments'
+                )
+            if len(payload) > self.max_attachment_bytes:
+                raise ValueError(
+                    f'Attachment exceeds the {self.max_attachment_bytes // (1024 * 1024)}MB limit'
+                )
+            total_bytes += len(payload)
+            if total_bytes > self.max_total_attachment_bytes:
+                raise ValueError('Combined attachment data exceeds the configured limit')
 
             attachments.append({
                 'filename': filename,
                 'content_type': content_type,
                 'extension': ext,
-                'size': len(part.get_payload(decode=True) or b'')
+                'size': len(payload),
+                # Raw bytes for content inspection — internal only, the
+                # attachment analyzer strips this before results go to JSON.
+                'data': payload,
             })
 
         return attachments
 
-    def _extract_attachments_msg(self, m) -> List[Dict[str, Any]]:
+    def _extract_attachments_msg(self, m: Any) -> List[Dict[str, Any]]:
         """Extract attachments from MSG message"""
         attachments: List[Dict[str, Any]] = []
 
+        if int(m.attachment_count or 0) > self.max_attachments:
+            raise ValueError(
+                f'Email exceeds the maximum of {self.max_attachments} attachments'
+            )
+
+        total_bytes = 0
         for a in (m.attachments or []):
             try:
-                fname = a.longFilename or a.shortFilename or ""
-                data_b = a.data or b""
-                kind = a.mimetype or mimetypes.guess_type(fname)[0] or ""
+                if not a.attached_by_value:
+                    continue
+                fname = a.file_name or "attachment.bin"
+                data_b = a.file_bytes or b""
+                kind = a.mime_type or mimetypes.guess_type(fname)[0] or ""
                 ext = os.path.splitext(fname.lower())[1].lstrip('.')
+
+                if len(attachments) >= self.max_attachments:
+                    raise ValueError(
+                        f'Email exceeds the maximum of {self.max_attachments} attachments'
+                    )
+                if len(data_b) > self.max_attachment_bytes:
+                    raise ValueError(
+                        f'Attachment exceeds the {self.max_attachment_bytes // (1024 * 1024)}MB limit'
+                    )
+                total_bytes += len(data_b)
+                if total_bytes > self.max_total_attachment_bytes:
+                    raise ValueError('Combined attachment data exceeds the configured limit')
 
                 attachments.append({
                     'filename': fname,
                     'content_type': kind,
                     'extension': ext,
-                    'size': len(data_b)
+                    'size': len(data_b),
+                    'data': data_b,
                 })
+            except ValueError:
+                raise
             except Exception as e:
                 logger.warning(f"[EmailParserService] Failed to extract MSG attachment: {e}")
 

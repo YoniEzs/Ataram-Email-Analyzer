@@ -1,16 +1,26 @@
-# Render Blueprint for Ataram Email Analyzer Backend
+# Render Blueprint. Deploys wait for GitHub checks before starting.
 # https://render.com/docs/blueprint-spec
 
 services:
+  - type: keyvalue
+    name: ataram-email-analyzer-cache
+    region: frankfurt
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru
+    persistenceMode: off
+
   - type: web
     name: ataram-email-analyzer-api
     runtime: python
     pythonVersion: 3.11.0
-    region: frankfurt  # or oregon, singapore - choose closest to your users
-    plan: free  # or starter for production
+    region: frankfurt
+    plan: free
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --timeout 120 run:app
+    buildCommand: pip install -r requirements-prod.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 2 --timeout 120 --access-logfile - --error-logfile - run:app
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
     envVars:
       - key: FLASK_ENV
         value: production
@@ -18,13 +28,29 @@ services:
         value: 3.11.0
       - key: SECRET_KEY
         generateValue: true
+      - key: TRUST_PROXY_COUNT
+        value: 1
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: ataram-email-analyzer-cache
+          property: connectionString
+      - key: RATELIMIT_STORAGE_URI
+        fromService:
+          type: keyvalue
+          name: ataram-email-analyzer-cache
+          property: connectionString
       - key: ABUSEIPDB_KEY
-        sync: false  # Set manually in Render dashboard
+        sync: false
+      - key: VIRUSTOTAL_API_KEY
+        sync: false
       - key: CORS_ORIGINS
         value: https://ataram.uk,https://email-analyzer.pages.dev,https://ataram-email-analyzer.pages.dev
       - key: ENABLE_WHOIS
         value: true
       - key: ENABLE_ABUSEIPDB
         value: true
-    healthCheckPath: /health
-    autoDeploy: true
+      - key: ENABLE_VIRUSTOTAL
+        value: false
+      - key: ENABLE_AUTH_VERIFICATION
+        value: true

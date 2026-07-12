@@ -6,12 +6,14 @@ Ataram Email Security Platform
 import logging
 import os
 import secrets
+import sys
 from logging.handlers import RotatingFileHandler
 
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from app.config import Config
 
@@ -23,24 +25,33 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
 
-    # Fail-fast: SECRET_KEY must be set before production traffic arrives.
-    # In dev/debug mode we generate an ephemeral key so the app still starts.
+    # Trust forwarded client/protocol headers only when the deployment states
+    # exactly how many controlled reverse proxies sit in front of the app.
+    proxy_count = int(app.config.get('TRUST_PROXY_COUNT', 0) or 0)
+    if proxy_count > 0:
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+            app.wsgi_app,
+            x_for=proxy_count,
+            x_proto=proxy_count,
+            x_host=proxy_count,
+        )
+
+    # SECRET_KEY: nothing in this API uses sessions, cookies, or CSRF tokens,
+    # so a missing key is not a security problem — generate an ephemeral one
+    # rather than hard-failing deployment. If session-based features are ever
+    # added, set SECRET_KEY explicitly so signed values survive restarts and
+    # are shared across workers.
     if not app.config.get('SECRET_KEY'):
+        app.config['SECRET_KEY'] = secrets.token_hex(32)
         if not app.config.get('TESTING'):
-            if not app.debug:
-                raise RuntimeError(
-                    "SECRET_KEY is not set. "
-                    "Generate one with: "
-                    "python -c \"import secrets; print(secrets.token_hex(32))\""
-                )
-            app.config['SECRET_KEY'] = secrets.token_hex(32)
-            logging.getLogger(__name__).warning(
-                "Using an ephemeral SECRET_KEY — sessions will not survive restarts. "
-                "Set the SECRET_KEY environment variable."
+            logging.getLogger(__name__).info(
+                "SECRET_KEY not set — generated an ephemeral key. This API is "
+                "stateless (no sessions/CSRF), so this is safe; set SECRET_KEY "
+                "explicitly if session features are added."
             )
 
     # HTTP security headers (Talisman if installed, manual fallback otherwise)
-    talisman = _apply_security_headers(app)
+    _apply_security_headers(app)
 
     # CORS — explicit origins only; no wildcard
     CORS(app, resources={
@@ -56,46 +67,85 @@ def create_app(config_class=Config):
         },
     })
 
-    # File logging (production only)
+    # Production logging: stdout by default (survives redeploys on PaaS
+    # platforms with ephemeral filesystems); rotating file log is opt-in.
     if not app.debug and not app.testing:
-        if not os.path.exists('logs'):
-            os.mkdir('logs')
-        file_handler = RotatingFileHandler(
-            'logs/email_analyzer.log',
-            maxBytes=10_240_000,
-            backupCount=10,
+        log_level = getattr(
+            logging, str(app.config.get('LOG_LEVEL', 'INFO')).upper(), logging.INFO
         )
-        file_handler.setFormatter(logging.Formatter(
+        formatter = logging.Formatter(
             '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-        ))
-        file_handler.setLevel(logging.INFO)
-        app.logger.addHandler(file_handler)
-        app.logger.setLevel(logging.INFO)
+        )
+
+        stream_handler = logging.StreamHandler(sys.stdout)
+        stream_handler.setFormatter(formatter)
+        stream_handler.setLevel(log_level)
+        app.logger.addHandler(stream_handler)
+
+        if app.config.get('LOG_TO_FILE'):
+            os.makedirs('logs', exist_ok=True)
+            file_handler = RotatingFileHandler(
+                'logs/email_analyzer.log',
+                maxBytes=10_240_000,
+                backupCount=10,
+            )
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(log_level)
+            app.logger.addHandler(file_handler)
+
+        app.logger.setLevel(log_level)
         app.logger.info('Email Analyzer startup')
 
     limiter.init_app(app)
 
     from app.api import analysis
     app.register_blueprint(analysis.bp)
+    # Versioned alias — same handlers, stable contract for API consumers.
+    # /api/* stays for backward compatibility; /api/v1/* is the documented path.
+    app.register_blueprint(analysis.bp, url_prefix='/api/v1', name='analysis_v1')
 
+    @app.route('/health')
     def health():
         return {'status': 'healthy', 'service': 'Email Analyzer API'}, 200
 
-    # /health must answer plain-HTTP probes (Docker HEALTHCHECK, load
-    # balancers) without a force-HTTPS redirect.
-    if talisman is not None:
-        health = talisman(force_https=False)(health)
-    app.add_url_rule('/health', 'health', health)
+    # This is a JSON API — errors raised outside the blueprint (404, 405,
+    # oversized uploads, unhandled exceptions) must not return HTML pages.
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify({
+            'error': 'Not found',
+            'message': 'The requested resource does not exist.',
+        }), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed(e):
+        return jsonify({
+            'error': 'Method not allowed',
+            'message': 'This HTTP method is not supported for this endpoint.',
+        }), 405
+
+    @app.errorhandler(413)
+    def payload_too_large(e):
+        max_mb = app.config.get('MAX_CONTENT_LENGTH', 0) // (1024 * 1024)
+        return jsonify({
+            'error': 'File too large',
+            'message': f'Upload exceeds the maximum size of {max_mb}MB.',
+        }), 413
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An unexpected error occurred. Please try again.',
+        }), 500
 
     return app
 
 
-def _apply_security_headers(app: Flask):
+def _apply_security_headers(app: Flask) -> None:
     """Set HTTP security headers.  Uses flask-talisman when available,
     falls back to a manual after_request hook so the app still hardens
-    itself even if the package isn't installed yet.
-
-    Returns the Talisman instance (for per-view overrides) or None."""
+    itself even if the package isn't installed yet."""
     try:
         from flask_talisman import Talisman
 
@@ -109,14 +159,14 @@ def _apply_security_headers(app: Flask):
             'object-src': ["'none'"],
             'frame-ancestors': ["'none'"],
         }
-        https_on = (
+        secure_transport = bool(
             app.config.get('FORCE_HTTPS', True)
             and not (app.debug or app.testing)
         )
-        return Talisman(
+        Talisman(
             app,
-            force_https=https_on,
-            strict_transport_security=https_on,
+            force_https=secure_transport,
+            strict_transport_security=secure_transport,
             strict_transport_security_max_age=31_536_000,
             content_security_policy=csp,
             referrer_policy='strict-origin-when-cross-origin',
@@ -128,10 +178,8 @@ def _apply_security_headers(app: Flask):
             response.headers['X-Frame-Options'] = 'DENY'
             response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
             response.headers['X-XSS-Protection'] = '1; mode=block'
-            if not app.debug:
+            if app.config.get('FORCE_HTTPS', True) and not (app.debug or app.testing):
                 response.headers['Strict-Transport-Security'] = (
                     'max-age=31536000; includeSubDomains'
                 )
             return response
-
-        return None

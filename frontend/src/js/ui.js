@@ -8,6 +8,7 @@ class UIController {
             dropZone: document.getElementById('dropZone'),
             fileInput: document.getElementById('fileInput'),
             apiKeyInput: document.getElementById('apiKeyInput'),
+            apiDestination: document.getElementById('apiDestination'),
             progressBar: document.getElementById('progressBar'),
             progressStep: document.getElementById('progressStep'),
             resultsSection: document.getElementById('resultsSection'),
@@ -16,6 +17,7 @@ class UIController {
             retryButton: document.getElementById('retryButton'),
             exportBar: document.getElementById('exportBar'),
             downloadReportBtn: document.getElementById('downloadReportBtn'),
+            printReportBtn: document.getElementById('printReportBtn'),
             historySection: document.getElementById('historySection'),
             historyList: document.getElementById('historyList'),
             clearHistoryBtn: document.getElementById('clearHistoryBtn')
@@ -133,14 +135,22 @@ class UIController {
             this.hideResults();
 
             const apiKey = this.elements.apiKeyInput ? this.elements.apiKeyInput.value.trim() : '';
-            const results = await window.api.analyzeEmail(file, apiKey);
+            const results = await window.api.analyzeEmail(file, apiKey, (percent) => {
+                if (this.elements.progressStep && percent < 100) {
+                    this.elements.progressStep.textContent = `${t('Uploading...')} ${percent}%`;
+                }
+            });
 
             this.hideProgress();
             this.showResults(results);
 
         } catch (error) {
             this.hideProgress();
-            this.showError(error.message || 'Failed to analyze email. Please try again.');
+            this.showError(error.message || t('Failed to analyze email. Please try again.'));
+        } finally {
+            if (this.elements.apiKeyInput) {
+                this.elements.apiKeyInput.value = '';
+            }
         }
     }
 
@@ -160,14 +170,14 @@ class UIController {
         if (!this.elements.progressBar) return;
         this.elements.progressBar.style.display = 'block';
         if (this.elements.progressStep) {
-            this.elements.progressStep.textContent = steps[0];
+            this.elements.progressStep.textContent = t(steps[0]);
         }
 
         let stepIndex = 0;
         this._progressInterval = setInterval(() => {
             stepIndex = (stepIndex + 1) % steps.length;
             if (this.elements.progressStep) {
-                this.elements.progressStep.textContent = steps[stepIndex];
+                this.elements.progressStep.textContent = t(steps[stepIndex]);
             }
         }, 1500);
 
@@ -299,6 +309,17 @@ class UIController {
     }
 
     /**
+     * Initialize the print-report button (browser print → Save as PDF)
+     */
+    initPrintButton() {
+        if (!this.elements.printReportBtn) return;
+        this.elements.printReportBtn.addEventListener('click', () => {
+            if (!window.lastAnalysisResult) return;
+            window.print();
+        });
+    }
+
+    /**
      * Save analysis result summary to localStorage history (max 10 entries)
      * @param {Object} result - Analysis result
      * @param {string} filename - Email filename
@@ -347,7 +368,7 @@ class UIController {
         const history = this.loadHistory();
 
         if (history.length === 0) {
-            list.innerHTML = '<p style="text-align:center; color:var(--text-muted);">No previous analyses.</p>';
+            list.innerHTML = `<p style="text-align:center; color:var(--text-muted);">${this._escapeHtml(t('No previous analyses.'))}</p>`;
             section.style.display = 'none';
             return;
         }
@@ -360,7 +381,7 @@ class UIController {
             const date = new Date(entry.analyzed_at).toLocaleString();
             return `
                 <div style="display:flex; align-items:center; gap:0.75rem; padding:0.6rem 0; border-bottom:1px solid var(--border-color);">
-                    <span class="pill ${cls}" style="min-width:70px; text-align:center;">${this._escapeHtml(entry.risk_level || 'unknown')}</span>
+                    <span class="pill ${cls}" style="min-width:70px; text-align:center;">${this._escapeHtml(t(entry.risk_level || 'unknown'))}</span>
                     <div style="flex:1; min-width:0;">
                         <div style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this._escapeHtml(entry.filename)}</div>
                         <div style="font-size:0.75rem; color:var(--text-muted);">${date}</div>

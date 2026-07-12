@@ -3,51 +3,16 @@ Header Forensics Service
 Extracts routing intelligence from email Received headers.
 """
 
-from typing import Any, Dict, Iterable, List, Optional
-import ipaddress
+from typing import Any, Dict, List, Optional
 import logging
 import re
 
+from app.utils.extractors import iter_ip_candidates, is_global_ip
+
 logger = logging.getLogger(__name__)
 
-# Bracketed IPv4/IPv6 literals in Received: headers, including IPv6: prefixes.
-_BRACKETED_IP_PATTERN = re.compile(r'\[([^\]\s]+)\]')
-# Conservative unbracketed IPv4 fallback for non-standard Received: headers.
-_UNBRACKETED_IPV4_PATTERN = re.compile(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])')
 # Regex to extract timezone offset from Date: headers, e.g. "+0300" or "-0500".
 _TZ_PATTERN = re.compile(r'([+-]\d{4})')
-
-
-def _normalize_ip_candidate(candidate: str) -> str:
-    candidate = candidate.strip()
-    if candidate.lower().startswith('ipv6:'):
-        return candidate[5:]
-    return candidate
-
-
-def _iter_ip_candidates(hop: str) -> Iterable[str]:
-    """Yield IP-like candidates from one Received: header."""
-    if not hop:
-        return
-
-    yielded = set()
-    for candidate in _BRACKETED_IP_PATTERN.findall(hop):
-        normalized = _normalize_ip_candidate(candidate)
-        if normalized not in yielded:
-            yielded.add(normalized)
-            yield normalized
-
-    for candidate in _UNBRACKETED_IPV4_PATTERN.findall(hop):
-        if candidate not in yielded:
-            yielded.add(candidate)
-            yield candidate
-
-
-def _is_global_ip(ip_str: str) -> bool:
-    try:
-        return ipaddress.ip_address(ip_str).is_global
-    except ValueError:
-        return False
 
 
 class HeaderForensicsService:
@@ -75,8 +40,8 @@ class HeaderForensicsService:
             seen: set = set()
 
             for hop in hops:
-                for ip_str in _iter_ip_candidates(hop):
-                    if ip_str in seen or not _is_global_ip(ip_str):
+                for ip_str in iter_ip_candidates(hop):
+                    if ip_str in seen or not is_global_ip(ip_str):
                         continue
                     public_ips.append(ip_str)
                     seen.add(ip_str)
@@ -84,8 +49,8 @@ class HeaderForensicsService:
             # Originating IP: oldest hop = last item in list (hops are newest-first).
             originating_ip: Optional[str] = None
             for hop in reversed(hops):
-                for ip_str in _iter_ip_candidates(hop):
-                    if _is_global_ip(ip_str):
+                for ip_str in iter_ip_candidates(hop):
+                    if is_global_ip(ip_str):
                         originating_ip = ip_str
                         break
                 if originating_ip:

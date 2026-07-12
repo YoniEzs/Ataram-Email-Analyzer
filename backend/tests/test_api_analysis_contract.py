@@ -9,6 +9,9 @@ from app.api import analysis as analysis_api
 
 def test_analyze_response_includes_new_contract_fields(client, monkeypatch):
     class DummyParserService:
+        def __init__(self, **kwargs):
+            self.options = kwargs
+
         def parse_email(self, data, filename):
             return {
                 "headers": {},
@@ -43,7 +46,7 @@ def test_analyze_response_includes_new_contract_fields(client, monkeypatch):
                 "risk_assessment": {
                     "score": 0,
                     "level": "low",
-                    "verdict": "APPEARS LEGITIMATE - Standard security measures apply",
+                    "verdict": "NO STRONG INDICATORS DETECTED - Not a guarantee of safety",
                     "whitelist_applied": False,
                 },
             }
