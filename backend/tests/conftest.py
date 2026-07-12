@@ -35,4 +35,3 @@ def client(app):
 def runner(app):
     """Create a test CLI runner"""
     return app.test_cli_runner()
-

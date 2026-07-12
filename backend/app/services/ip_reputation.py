@@ -81,4 +81,3 @@ class IPReputationService:
         except Exception as e:
             logger.warning(f"[IPReputationService] AbuseIPDB check failed for {ip}: {e}")
             return None
-
