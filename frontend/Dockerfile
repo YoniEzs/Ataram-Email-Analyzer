@@ -4,6 +4,11 @@
 # Dependabot (docker ecosystem) keeps this digest updated.
 FROM nginx:alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
 
+# Keep the pinned base identity while applying security fixes published to
+# its Alpine release channel. The signed release-image digest is the exact
+# deployable artifact.
+RUN apk upgrade --no-cache
+
 # Copy frontend files
 COPY src/ /usr/share/nginx/html/
 
