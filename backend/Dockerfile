@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Pinned by digest; Dependabot keeps the digest current.
-FROM python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0dc86c47c0d8b3 AS builder
+FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS builder
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1
@@ -18,7 +18,7 @@ RUN python -m pip wheel --wheel-dir /wheels \
     && python -m pip wheel --wheel-dir /wheels -r requirements-prod.txt
 
 
-FROM python:3.11-slim@sha256:e031123e3d85762b141ad1cbc56452ba69c6e722ebf2f042cc0dc86c47c0d8b3 AS runtime
+FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS runtime
 
 ENV FLASK_APP=run.py \
     FLASK_ENV=production \
