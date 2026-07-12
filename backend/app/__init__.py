@@ -29,7 +29,7 @@ def create_app(config_class=Config):
     # exactly how many controlled reverse proxies sit in front of the app.
     proxy_count = int(app.config.get('TRUST_PROXY_COUNT', 0) or 0)
     if proxy_count > 0:
-        app.wsgi_app = ProxyFix(
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
             app.wsgi_app,
             x_for=proxy_count,
             x_proto=proxy_count,

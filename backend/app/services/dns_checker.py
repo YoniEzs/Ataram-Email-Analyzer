@@ -38,7 +38,8 @@ class DNSCheckerService:
             for rdata in answers:
                 # Long TXT records are split into multiple <=255-byte strings;
                 # join them (to_text() would leave '" "' separators inside).
-                txt = b''.join(rdata.strings).decode('utf-8', errors='replace')
+                chunks = getattr(rdata, 'strings', ())
+                txt = b''.join(chunks).decode('utf-8', errors='replace')
                 records.append(txt)
             result = records if records else None
             cache_set(f"dns:{domain}", result, 3600)
@@ -59,6 +60,7 @@ class DNSCheckerService:
             if record.lower().startswith('v=spf1'):
                 return record
         return None
+
     def check_dmarc(self, domain: str) -> Optional[str]:
         """Check DMARC record for domain"""
         if not domain:
