@@ -251,4 +251,3 @@ class ContentAnalyzerService:
             matches.append('Base64Encoding')
 
         return matches
-

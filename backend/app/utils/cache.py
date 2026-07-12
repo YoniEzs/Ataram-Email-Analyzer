@@ -146,4 +146,3 @@ def cache_get(key: str) -> Optional[Any]:
 
 def cache_set(key: str, value: Any, ttl: int) -> None:
     _cache.set(key, value, ttl)
-

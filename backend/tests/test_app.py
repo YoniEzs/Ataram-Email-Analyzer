@@ -61,4 +61,3 @@ def test_413_returns_json(app, client):
     payload = response.get_json()
     assert payload is not None
     assert payload['error'] == 'File too large'
-

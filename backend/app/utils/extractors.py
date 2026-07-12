@@ -34,7 +34,6 @@ def extract_sender_domain(from_header: str) -> Optional[str]:
         return addr.split('@')[1].strip().lower()
     return None
 
-
 def email_domain(email_or_header: str) -> str:
     """
     Extract domain from email address or header
@@ -139,4 +138,3 @@ def extract_sender_ip(received_headers: List[str]) -> Optional[str]:
                 return candidate
 
     return None
-

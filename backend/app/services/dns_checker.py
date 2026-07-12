@@ -59,7 +59,6 @@ class DNSCheckerService:
             if record.lower().startswith('v=spf1'):
                 return record
         return None
-
     def check_dmarc(self, domain: str) -> Optional[str]:
         """Check DMARC record for domain"""
         if not domain:
@@ -101,4 +100,3 @@ class DNSCheckerService:
             if re.search(r'(?:^|;)\s*p=', record):
                 return record
         return None
-
