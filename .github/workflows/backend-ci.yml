@@ -80,6 +80,15 @@ jobs:
       - name: Build Docker image
         run: docker build -t email-analyzer-backend:${{ github.sha }} backend
 
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: email-analyzer-backend:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
       - name: Verify image contents
         run: |
           docker run --rm --entrypoint sh email-analyzer-backend:${{ github.sha }} -c '

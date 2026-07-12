@@ -95,3 +95,31 @@ jobs:
 
       - name: Validate Compose model
         run: docker compose config --quiet
+
+  compose-smoke:
+    name: Integrated Docker Compose smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Build and start the clean-clone stack
+        run: |
+          cleanup() {
+            docker compose logs || true
+            docker compose down --volumes --remove-orphans || true
+          }
+          trap cleanup EXIT
+
+          docker compose up --build --detach
+          for _ in {1..60}; do
+            if curl -fsS http://localhost:3000/frontend-health >/dev/null \
+              && curl -fsS http://localhost:3000/health >/dev/null \
+              && curl -fsS http://localhost:3000/api/openapi.json >/dev/null; then
+              docker compose ps
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
