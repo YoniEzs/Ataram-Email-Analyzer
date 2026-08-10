@@ -1,5 +1,15 @@
 # Roadmap
 
+## Post-release-review scoring fix
+
+- [x] Attachment-only malware no longer reads as "low / NO STRONG INDICATORS
+  DETECTED": a single locally-verified critical attachment (hidden executable,
+  executable bytes under a document extension, or an executable inside an
+  archive) now clears the medium floor on its own, and the new-domain
+  escalation recognises archive-delivered executables (previously only bare
+  `executable_file` attachments triggered it). Covered by an end-to-end
+  real-email matrix (`tests/test_real_email_matrix.py`).
+
 ## Public-release work completed on the release-readiness branch
 
 - [x] Treat all uploaded `Authentication-Results` values as untrusted,
