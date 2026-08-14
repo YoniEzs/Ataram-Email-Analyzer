@@ -1,0 +1,16 @@
+# Development and CI dependencies.
+#
+# Deliberately separate from requirements.txt so the production image does not
+# carry the test framework and its transitive tree — code that is never executed
+# in production is still attack surface, and still shows up in vulnerability
+# scans of the published image.
+#
+# Install with:  pip install -r requirements.txt -r requirements-dev.txt
+
+-r requirements.txt
+
+pytest==8.3.4
+pytest-cov==6.0.0
+
+# Dependency vulnerability scanning:  python -m pip_audit -r requirements.txt
+pip-audit==2.10.1

@@ -1,0 +1,35 @@
+# The Dockerfile does `COPY . .`. Without this file that copies the entire .git
+# directory (full history, including anything ever committed and later removed)
+# and any live .env sitting in the build context straight into the published
+# image, where `docker history` / a shell in the container can read it.
+
+.git
+.gitignore
+.github
+
+# Secrets — never in an image layer.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# Test and build artefacts have no place in a runtime image.
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local noise
+logs/
+*.log
+.DS_Store
+.idea/
+.vscode/
+README.md

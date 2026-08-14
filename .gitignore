@@ -1,0 +1,30 @@
+# Neither active repo had a .gitignore, so a live .env in the working tree had
+# nothing preventing `git add .` from committing real credentials to origin.
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime
+logs/
+*.log
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
