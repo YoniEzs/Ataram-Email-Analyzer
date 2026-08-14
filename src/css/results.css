@@ -1,0 +1,384 @@
+/* ===================================
+   Results Display Styles
+   =================================== */
+
+/* === Risk Assessment Banner === */
+.risk-banner {
+    padding: var(--spacing-lg);
+    border-radius: var(--border-radius);
+    margin-bottom: var(--spacing-lg);
+    text-align: center;
+    border: 2px solid;
+}
+
+.risk-banner.critical {
+    background: rgba(220, 38, 38, 0.15);
+    border-color: var(--color-critical);
+}
+
+.risk-banner.high {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--color-danger);
+}
+
+.risk-banner.medium {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: var(--color-warning);
+}
+
+.risk-banner.low {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: var(--color-success);
+}
+
+.risk-score {
+    font-size: 3rem;
+    font-weight: 700;
+    margin: var(--spacing-sm) 0;
+}
+
+.risk-banner.critical .risk-score { color: var(--color-critical); }
+.risk-banner.high .risk-score { color: var(--color-danger); }
+.risk-banner.medium .risk-score { color: var(--color-warning); }
+.risk-banner.low .risk-score { color: var(--color-success); }
+
+.risk-level {
+    font-size: 1.25rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--spacing-sm);
+}
+
+.risk-verdict {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+/* === Section Grid === */
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    gap: var(--spacing-lg);
+}
+
+/* === Result Card === */
+.result-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    box-shadow: var(--shadow-md);
+}
+
+.result-card-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-sm);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.result-card-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--color-primary);
+}
+
+.result-card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* === Data Table === */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+    padding: var(--spacing-sm);
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+}
+
+.data-table th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    width: 35%;
+}
+
+.data-table td {
+    color: var(--text-primary);
+    word-break: break-word;
+}
+
+.data-table tr:last-child th,
+.data-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* === Pills/Badges === */
+.pill {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin: 0.125rem;
+    border: 1px solid;
+}
+
+.pill.success {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: var(--color-success);
+    color: var(--color-success);
+}
+
+.pill.warning {
+    background: rgba(245, 158, 11, 0.15);
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+}
+
+.pill.danger {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+}
+
+.pill.info {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+/* === Suspicions List === */
+.suspicions-list {
+    list-style: none;
+}
+
+.suspicion-item {
+    padding: var(--spacing-sm);
+    margin-bottom: var(--spacing-xs);
+    border-radius: var(--border-radius-sm);
+    border-left: 3px solid;
+}
+
+.suspicion-item.critical {
+    background: rgba(220, 38, 38, 0.1);
+    border-color: var(--color-critical);
+}
+
+.suspicion-item.high {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: var(--color-danger);
+}
+
+.suspicion-item.medium {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: var(--color-warning);
+}
+
+.suspicion-item.low {
+    background: rgba(16, 185, 129, 0.1);
+    border-color: var(--color-success);
+}
+
+.suspicion-category {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+/* === URL List === */
+.url-list {
+    margin-top: var(--spacing-sm);
+}
+
+.url-item {
+    padding: var(--spacing-sm);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.url-item.suspicious {
+    border-color: var(--color-danger);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.url-link {
+    word-break: break-all;
+    color: var(--color-primary);
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+}
+
+.url-domain {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.url-issues {
+    margin-top: var(--spacing-xs);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+/* === Attachment List === */
+.attachment-list {
+    margin-top: var(--spacing-sm);
+}
+
+.attachment-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-sm);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    margin-bottom: var(--spacing-sm);
+}
+
+.attachment-item.suspicious {
+    border-color: var(--color-danger);
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.attachment-info {
+    flex: 1;
+}
+
+.attachment-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.attachment-meta {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.attachment-severity {
+    padding: 0.375rem 0.75rem;
+    border-radius: var(--border-radius-sm);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.attachment-severity.critical {
+    background: var(--color-critical);
+    color: white;
+}
+
+.attachment-severity.high {
+    background: var(--color-danger);
+    color: white;
+}
+
+.attachment-severity.medium {
+    background: var(--color-warning);
+    color: white;
+}
+
+/* === Hops/Routing === */
+.hops-list {
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-sm);
+    padding: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+}
+
+.hop-item {
+    padding: var(--spacing-xs);
+    margin-bottom: var(--spacing-xs);
+    font-family: 'Courier New', monospace;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+    border-left: 2px solid var(--color-primary);
+    padding-left: var(--spacing-sm);
+}
+
+/* === Empty States === */
+.empty-state {
+    text-align: center;
+    padding: var(--spacing-lg);
+    color: var(--text-muted);
+}
+
+/* === Code/Pre === */
+code, pre {
+    font-family: 'Courier New', monospace;
+    background: var(--bg-primary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+pre {
+    padding: var(--spacing-sm);
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+/* === Expandable Details === */
+details {
+    margin-top: var(--spacing-sm);
+}
+
+summary {
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    background: var(--bg-primary);
+    border-radius: var(--border-radius-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: background 0.2s;
+}
+
+summary:hover {
+    background: var(--bg-tertiary);
+}
+
+details[open] summary {
+    margin-bottom: var(--spacing-sm);
+}
+
+/* === Responsive === */
+@media (max-width: 1024px) {
+    .results-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 768px) {
+    .data-table th {
+        width: 40%;
+    }
+
+    .risk-score {
+        font-size: 2.5rem;
+    }
+
+    .result-card {
+        padding: var(--spacing-md);
+    }
+}

@@ -1,0 +1,17 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build / tooling
+node_modules/
+dist/
+.wrangler/
+*.log
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/

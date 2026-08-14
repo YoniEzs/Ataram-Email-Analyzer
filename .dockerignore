@@ -1,0 +1,18 @@
+# Keeps .git and any local secrets out of the published image. The Dockerfile
+# copies only src/, but the build context is still sent to the daemon.
+
+.git
+.gitignore
+.github
+
+.env
+.env.*
+*.pem
+*.key
+
+node_modules/
+*.log
+.DS_Store
+.idea/
+.vscode/
+README.md
