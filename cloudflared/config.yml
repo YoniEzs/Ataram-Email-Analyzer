@@ -1,0 +1,31 @@
+tunnel: 60200874-f30b-4062-b8c0-67811340916b
+credentials-file: /etc/cloudflared/credentials.json
+
+loglevel: info
+# Bound to loopback inside the container: on 0.0.0.0 the metrics endpoint (which
+# reports tunnel identity and connection state) is readable by every other
+# container on the compose network.
+metrics: 127.0.0.1:2000
+
+ingress:
+  - hostname: analyzer.itgalya.com
+    service: http://web:80
+    originRequest:
+      httpHostHeader: analyzer.itgalya.com
+      connectTimeout: 10s
+      # NOTE: Cloudflare's own Proxy Read Timeout (125s) is the real ceiling on
+      # how long an analysis may take — it is not configurable below Enterprise.
+      # Origin-side timeouts above that only decide who gives up second.
+      #
+      # SECURITY — Access is enforced only at Cloudflare's edge, so without this
+      # anyone who can reach nginx directly (LAN, another proxied DNS record
+      # pointing at this same tunnel UUID, a VPN) bypasses authentication
+      # completely. This makes cloudflared verify the Access JWT before proxying.
+      # audTag is the application's AUD tag; it must match or every authenticated
+      # request is rejected at the connector.
+      access:
+        required: true
+        teamName: ataraxcode
+        audTag:
+          - 270a318a1434863bf02f27a881039a30493b9df8bea035ba7752c535443b3031
+  - service: http_status:404

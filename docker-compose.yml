@@ -1,0 +1,191 @@
+name: ataram-analyzer
+
+# Shared hardening applied to every service:
+#   no-new-privileges  — a setuid binary inside the image cannot raise privileges
+#   cap_drop: ALL      — none of these processes need a Linux capability
+#   resource limits    — one abusive request cannot starve the host or its neighbours
+#   log rotation       — logs are attacker-influenced and must not fill the disk
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  # Shared storage for rate limiting. Without it Flask-Limiter keeps counters in
+  # each gunicorn worker's own memory, so a "10 per minute" limit is enforced
+  # roughly four times too loosely and resets on every restart.
+  #
+  # Not published, no persistence (counters are worthless after a restart), and
+  # bounded so it cannot grow into the host's memory.
+  #
+  # protected-mode is OFF deliberately. With it on and no password set, Redis
+  # refuses every connection that does not come from loopback — so the backend
+  # could never reach it, and because the limiter is configured to fall back to
+  # in-memory storage rather than fail the request, that would have been
+  # SILENT: limits would quietly go back to being per-worker with nothing in
+  # the logs. There is no published port and no route to this container from
+  # outside the compose network, which is the isolation protected-mode is a
+  # substitute for. Add `--requirepass` and a password in the URI if this
+  # network ever carries anything else.
+  redis:
+    <<: *hardening
+    image: redis:7.4-alpine
+    container_name: ataram-analyzer-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --save ""
+      --appendonly no
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --protected-mode no
+    user: "999:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,noexec,nosuid,nodev
+    mem_limit: 192m
+    cpus: 0.5
+    pids_limit: 64
+    networks:
+      - ataram
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+  backend:
+    <<: *hardening
+    build:
+      context: ./backend
+    image: ataram/email-analyzer-backend:latest
+    container_name: ataram-analyzer-backend
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      FLASK_ENV: production
+      HOST: 0.0.0.0
+      PORT: "5000"
+      LOG_TO_STDOUT: "true"
+      # Kept in sync with client_max_body_size in nginx.conf. Lowered from 50:
+      # tmpfs spool pages count against mem_limit, and analysis.py holds a
+      # second full copy of the body in the worker heap, so 50MB x 4 workers
+      # left almost no headroom under the 1GB cgroup limit.
+      MAX_UPLOAD_MB: "25"
+      # cloudflared -> nginx -> gunicorn: the app sees nginx, one hop it may
+      # trust. Raising this without adding a real proxy lets clients spoof
+      # X-Forwarded-For and evade rate limiting entirely.
+      #
+      # This is only correct because nginx.conf forwards a SINGLE value
+      # (X-Forwarded-For $real_client_ip). With the usual appending
+      # $proxy_add_x_forwarded_for, ProxyFix's rightmost read returns the
+      # cloudflared container address and every client collapses to one bucket.
+      TRUSTED_PROXY_COUNT: "1"
+      # Shared limiter storage, so limits hold across all four workers.
+      RATELIMIT_STORAGE_URI: "redis://redis:6379/0"
+    # The application never writes to its own filesystem; uploads are spooled to
+    # /tmp and gunicorn keeps worker heartbeats on /dev/shm, both tmpfs below.
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777,noexec,nosuid,nodev
+      - /dev/shm:size=64m,mode=1777,noexec,nosuid,nodev
+    mem_limit: 1g
+    cpus: 2.0
+    pids_limit: 256
+    expose:
+      - "5000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ataram
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  web:
+    <<: *hardening
+    image: nginx:1.27-alpine
+    container_name: ataram-analyzer-web
+    restart: unless-stopped
+    # nginx needs to bind port 80 inside its own namespace and drop to the nginx
+    # user, so it keeps exactly those two capabilities and nothing else.
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+      # DAC_OVERRIDE was granted and is not needed: nginx starts as root (so
+      # file permissions never block it) and every path it touches afterwards
+      # is either world-readable or owned by the worker user.
+    volumes:
+      - ./frontend/src:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    tmpfs:
+      # Buffered upload bodies spool to /var/cache/nginx/client_temp, the
+      # image's default path. Sized for client_max_body_size 25m x
+      # limit_conn 4 = 100MB, plus headroom. At the previous 64m, two
+      # concurrent uploads filled it and nginx returned 500 with ENOSPC.
+      - /var/cache/nginx:size=192m,mode=0755,noexec,nosuid,nodev
+      - /var/run:size=8m,mode=0755,noexec,nosuid,nodev
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    mem_limit: 320m
+    cpus: 1.0
+    pids_limit: 128
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
+    networks:
+      - ataram
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 5s
+      retries: 3
+
+  cloudflared:
+    <<: *hardening
+    image: cloudflare/cloudflared:latest
+    container_name: ataram-analyzer-cloudflared
+    restart: unless-stopped
+    # The image defaults to uid 65532, which cannot read the 0600 credentials
+    # file owned by the deploy user. Run as that user instead of loosening the
+    # file mode.
+    user: "1000:1000"
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777,noexec,nosuid,nodev
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 128
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - ataram
+
+networks:
+  ataram:
+    driver: bridge
