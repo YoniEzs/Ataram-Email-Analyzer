@@ -103,13 +103,14 @@ class UIController {
      */
     validateFile(file) {
         if (!file) {
-            return { valid: false, error: 'No file selected' };
+            return { valid: false, error: t('No file selected') };
         }
 
         if (file.size > CONFIG.MAX_FILE_SIZE) {
             return {
                 valid: false,
-                error: `File size exceeds maximum of ${CONFIG.MAX_FILE_SIZE / (1024 * 1024)}MB`
+                error: t('File size exceeds maximum of {size}MB')
+                    .replace('{size}', CONFIG.MAX_FILE_SIZE / (1024 * 1024))
             };
         }
 
@@ -117,7 +118,8 @@ class UIController {
         if (!CONFIG.ALLOWED_EXTENSIONS.includes(extension)) {
             return {
                 valid: false,
-                error: `Invalid file type. Only ${CONFIG.ALLOWED_EXTENSIONS.join(', ')} files are supported`
+                error: t('Invalid file type. Only {types} files are supported')
+                    .replace('{types}', CONFIG.ALLOWED_EXTENSIONS.join(', '))
             };
         }
 
@@ -380,13 +382,13 @@ class UIController {
             const cls = levelClass[entry.risk_level] || 'info';
             const date = new Date(entry.analyzed_at).toLocaleString();
             return `
-                <div style="display:flex; align-items:center; gap:0.75rem; padding:0.6rem 0; border-bottom:1px solid var(--border-color);">
+                <div style="display:flex; align-items:center; gap:0.75rem; padding:0.6rem 0; border-bottom:1px solid var(--border);">
                     <span class="pill ${cls}" style="min-width:70px; text-align:center;">${this._escapeHtml(t(entry.risk_level || 'unknown'))}</span>
                     <div style="flex:1; min-width:0;">
                         <div style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this._escapeHtml(entry.filename)}</div>
                         <div style="font-size:0.75rem; color:var(--text-muted);">${date}</div>
                     </div>
-                    <span style="font-weight:600; color:var(--text-secondary);">${entry.risk_score}/100</span>
+                    <span style="font-weight:600; color:var(--text-main);">${entry.risk_score}/100</span>
                 </div>
             `;
         }).join('');

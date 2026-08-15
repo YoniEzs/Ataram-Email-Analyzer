@@ -343,6 +343,15 @@
     color: black;
 }
 
+/* A suspicious attachment can stay at 'low' (e.g. only a lure-word filename),
+   and the badge is rendered for every suspicious attachment — without this
+   rule it fell back to the unstyled base badge. */
+.attachment-severity.low {
+    background: var(--bg-body);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+
 /* === Hops/Routing === */
 .hops-list {
     max-height: 250px;
