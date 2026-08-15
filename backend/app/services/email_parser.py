@@ -257,14 +257,40 @@ class EmailParserService:
 
         return parts
 
+    @staticmethod
+    def _is_attachment_part(part: Any) -> bool:
+        """Decide whether a MIME part carries attachment bytes.
+
+        ``Content-Disposition`` is optional (RFC 2183) and an attacker can
+        simply omit it or set it to ``inline``. Mail clients fall back to the
+        ``name`` parameter of ``Content-Type`` in that case and still present
+        the part as a file, so requiring ``Content-Disposition: attachment``
+        let a payload reach the user completely unanalysed.
+        """
+        if part.get_content_maintype() == 'multipart':
+            return False
+
+        disp = str(part.get('Content-Disposition', '') or '').lower()
+        if 'attachment' in disp:
+            return True
+
+        # get_filename() reads Content-Disposition filename= first and falls
+        # back to the Content-Type name= parameter.
+        if not part.get_filename():
+            return False
+
+        # A named text/plain or text/html part without an explicit disposition
+        # is the message body in several mailers; it is already collected by
+        # _get_body_parts and analysed there.
+        return part.get_content_type() not in ('text/plain', 'text/html')
+
     def _extract_attachments_eml(self, msg: Any) -> List[Dict[str, Any]]:
         """Extract attachments from EML message"""
         attachments: List[Dict[str, Any]] = []
 
         total_bytes = 0
         for part in msg.walk():
-            disp = part.get('Content-Disposition', '') or ''
-            if not disp or 'attachment' not in disp.lower():
+            if not self._is_attachment_part(part):
                 continue
 
             filename = part.get_filename()

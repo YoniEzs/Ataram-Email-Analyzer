@@ -85,7 +85,16 @@ def analyze_email():
         original_filename = file.filename.strip()
         extension = original_filename.rsplit('.', 1)[-1].lower()
         file_data = file.read()
-        filename = secure_filename(original_filename) or f'upload.{extension}'
+        # secure_filename() strips non-ASCII characters, so a name like
+        # "דואר.eml" collapses to "eml" — no dot left, which made
+        # validate_email_file() below skip the EML/MSG content check entirely.
+        # Re-attach the extension allowed_file() has already validated.
+        filename = secure_filename(original_filename)
+        if not filename.lower().endswith(f'.{extension}'):
+            stem = filename.rsplit('.', 1)[0] if '.' in filename else filename
+            if stem.lower() == extension:
+                stem = ''
+            filename = f'{stem or "upload"}.{extension}'
 
         is_valid, error_msg = validate_email_file(
             file_data,
