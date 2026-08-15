@@ -11,8 +11,10 @@ from app.utils.extractors import iter_ip_candidates, is_global_ip
 
 logger = logging.getLogger(__name__)
 
-# Regex to extract timezone offset from Date: headers, e.g. "+0300" or "-0500".
-_TZ_PATTERN = re.compile(r'([+-]\d{4})')
+# Timezone offset in a Date: header. RFC 5322 spells it "+0300"; the MSG
+# parser falls back to datetime.isoformat(), which spells it "+03:00". Both
+# are accepted and reported in the RFC 5322 form.
+_TZ_PATTERN = re.compile(r'([+-]\d{2}):?(\d{2})(?!\d)')
 
 
 class HeaderForensicsService:
@@ -60,7 +62,7 @@ class HeaderForensicsService:
             if date_header:
                 tz_match = _TZ_PATTERN.search(date_header)
                 if tz_match:
-                    timezone_offset = tz_match.group(1)
+                    timezone_offset = tz_match.group(1) + tz_match.group(2)
 
             return {
                 'public_ips': public_ips,

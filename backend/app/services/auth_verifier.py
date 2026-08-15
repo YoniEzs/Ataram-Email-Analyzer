@@ -85,7 +85,16 @@ class AuthVerifierService:
         return match.group(1).decode('ascii').lower() if match else None
 
     def _verify_dkim(self, raw_bytes: Optional[bytes]) -> Optional[str]:
-        """Verify a DKIM signature on the raw message."""
+        """Verify a DKIM signature on the raw message.
+
+        Returns ``'pass'``/``'fail'`` only for an actual cryptographic verdict.
+        dkimpy already converts a bad or unpublished key into ``False``; the
+        exceptions that escape it are transport problems (DNS timeout, no
+        resolver, unreachable network). Reporting those as ``'fail'`` scored
+        perfectly legitimate signed mail as forged whenever DNS was slow or the
+        deployment was offline, so they are reported as ``'error'`` instead and
+        never contribute to the risk score.
+        """
         if not DKIM_AVAILABLE or not raw_bytes:
             return None
         if b'dkim-signature' not in raw_bytes[:131072].lower():
@@ -98,4 +107,4 @@ class AuthVerifierService:
             )
         except Exception as exc:
             logger.warning('[AuthVerifierService] DKIM verification error: %s', exc)
-            return 'fail'
+            return 'error'
