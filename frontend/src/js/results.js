@@ -64,7 +64,7 @@ class ResultsRenderer {
 
         const items = suspicions.map(s => `
             <li class="suspicion-item ${s.severity}">
-                <div class="suspicion-category">${this.escapeHtml(s.category)} <span class="pill ${s.severity}">${this.escapeHtml(t(s.severity))}</span></div>
+                <div class="suspicion-category">${this.escapeHtml(s.category)} <span class="pill ${this.severityPillClass(s.severity)}">${this.escapeHtml(t(s.severity))}</span></div>
                 <div>${this.escapeHtml(s.message)}</div>
             </li>
         `).join('');
@@ -206,7 +206,7 @@ class ResultsRenderer {
         if (trusted && passResults.includes(result)) className = 'success';
         else if (trusted && failResults.includes(result)) className = 'danger';
 
-        return `<span class="pill ${className}">${name}: ${result}</span>`;
+        return `<span class="pill ${className}">${name}: ${this.escapeHtml(result)}</span>`;
     }
 
     /**
@@ -485,6 +485,18 @@ class ResultsRenderer {
     }
 
     /**
+     * Map a backend severity ('low'|'medium'|'high'|'critical') onto the
+     * pill colour variants the stylesheet actually defines. Emitting the raw
+     * severity produced `.pill.critical`, for which there is no CSS rule, so
+     * every severity rendered in the same neutral colour.
+     * @param {string} severity
+     * @returns {string} pill variant class
+     */
+    severityPillClass(severity) {
+        return { critical: 'danger', high: 'warning', medium: 'info', low: 'success' }[severity] || 'info';
+    }
+
+    /**
      * Render list of items
      */
     renderList(items) {
@@ -509,7 +521,7 @@ class ResultsRenderer {
      */
     renderError(error) {
         this.container.innerHTML = `
-            <div class="result-card" style="background: rgba(239, 68, 68, 0.1); border-color: var(--color-danger);">
+            <div class="result-card" style="background: rgba(239, 68, 68, 0.1); border-color: var(--danger);">
                 <h3>${t('Error')}</h3>
                 <p>${this.escapeHtml(error)}</p>
             </div>
