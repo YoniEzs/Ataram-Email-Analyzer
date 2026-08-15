@@ -93,8 +93,12 @@ class ContentAnalyzerService:
         Returns:
             Analysis results
         """
-        language_analysis = self.analyze_language(text) if text else {}
-        html_analysis = self.analyze_html(html) if html else {}
+        # Both helpers already return their full default shape for empty
+        # input. Short-circuiting them here dropped whole key groups from the
+        # response — a plain-text email came back with no 'forms'/'scripts'/
+        # 'hidden_elements'/'anchor_mismatches' keys at all.
+        language_analysis = self.analyze_language(text)
+        html_analysis = self.analyze_html(html)
         yara_matches = self.scan_yara_like(text + "\n" + html)
 
         return {

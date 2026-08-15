@@ -20,6 +20,15 @@ from app.config import Config
 limiter = Limiter(key_func=get_remote_address)
 
 
+def _format_byte_limit(max_bytes: int) -> str:
+    """Render an upload limit without collapsing sub-megabyte values to 0."""
+    if max_bytes >= 1024 * 1024:
+        return f'{max_bytes // (1024 * 1024)}MB'
+    if max_bytes >= 1024:
+        return f'{max_bytes // 1024}KB'
+    return f'{max_bytes} bytes'
+
+
 def create_app(config_class=Config):
     """Application factory pattern"""
     app = Flask(__name__)
@@ -126,10 +135,14 @@ def create_app(config_class=Config):
 
     @app.errorhandler(413)
     def payload_too_large(e):
-        max_mb = app.config.get('MAX_CONTENT_LENGTH', 0) // (1024 * 1024)
+        # Integer MB division reported "0MB" for any limit under 1 MiB, which
+        # is both wrong and unactionable — fall back to KB in that range.
         return jsonify({
             'error': 'File too large',
-            'message': f'Upload exceeds the maximum size of {max_mb}MB.',
+            'message': (
+                'Upload exceeds the maximum size of '
+                f'{_format_byte_limit(app.config.get("MAX_CONTENT_LENGTH") or 0)}.'
+            ),
         }), 413
 
     @app.errorhandler(500)

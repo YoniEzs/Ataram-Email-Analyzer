@@ -73,8 +73,14 @@ def validate_email_file(
         return False, "File is too small to be a valid email"
 
     if len(file_data) > max_bytes:
-        max_mb = max_bytes // (1024 * 1024)
-        return False, f"File exceeds maximum size of {max_mb}MB"
+        # Integer MB division reported "0MB" for any limit under 1 MiB.
+        if max_bytes >= 1024 * 1024:
+            limit = f"{max_bytes // (1024 * 1024)}MB"
+        elif max_bytes >= 1024:
+            limit = f"{max_bytes // 1024}KB"
+        else:
+            limit = f"{max_bytes} bytes"
+        return False, f"File exceeds maximum size of {limit}"
 
     ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
 
