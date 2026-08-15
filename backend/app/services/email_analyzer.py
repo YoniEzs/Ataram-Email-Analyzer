@@ -359,7 +359,11 @@ class EmailAnalyzerService:
         lower = auth_results.lower()
 
         def extract_result(name: str) -> Optional[str]:
-            m = re.search(rf"{name}\s*=\s*([a-z]+)", lower)
+            # The lookbehind keeps the method name from matching as a
+            # substring: without it "nospf=pass" satisfied a search for "spf"
+            # and "policy.dmarc=none" satisfied a search for "dmarc", letting a
+            # forged header show an arbitrary claim in the UI.
+            m = re.search(rf"(?<![\w.-]){name}\s*=\s*([a-z]+)", lower)
             return m.group(1) if m else None
 
         return {
