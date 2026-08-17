@@ -250,6 +250,19 @@ OPENAPI_SPEC = {
                             'level': {'type': 'string', 'enum': ['low', 'medium', 'high', 'critical']},
                             'verdict': {'type': 'string'},
                             'whitelist_applied': {'type': 'boolean'},
+                            'factors': {
+                                'type': 'array',
+                                'description': 'Ordered breakdown of what contributed to the score',
+                                'items': {
+                                    'type': 'object',
+                                    'properties': {
+                                        'label': {'type': 'string'},
+                                        'points': {'type': 'integer'},
+                                        'severity': {'type': 'string', 'enum': ['info', 'low', 'medium', 'high', 'critical']},
+                                        'detail': {'type': 'string'},
+                                    },
+                                },
+                            },
                         },
                     },
                     'metadata': {'type': 'object'},

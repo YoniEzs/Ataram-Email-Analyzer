@@ -1,5 +1,10 @@
 /**
  * Results Renderer
+ *
+ * Layout: a summary-first verdict header, the key "official artifacts"
+ * conclusion, a "why this score" breakdown, severity-ordered findings, and
+ * the full detail split across tabs. Copy buttons and one-click lookups let
+ * an analyst pivot IPs/domains/hashes into VirusTotal / AbuseIPDB / Google.
  */
 
 class ResultsRenderer {
@@ -17,60 +22,84 @@ class ResultsRenderer {
             return;
         }
 
-        const html = `
-            ${this.renderRiskBanner(data.risk_assessment)}
+        this.container.innerHTML = `
+            ${this.renderSummary(data)}
             ${this.renderConclusion(data.conclusion)}
+            ${this.renderRiskFactors(data.risk_assessment)}
             ${this.renderSuspicions(data.suspicions)}
-            <div class="results-grid">
-                ${this.renderHeaders(data.headers)}
-                ${this.renderAuthentication(data.authentication)}
-                ${this.renderSenderInfo(data.sender_info)}
-                ${this.renderContent(data.content)}
-                ${this.renderURLs(data.urls)}
-                ${this.renderAttachments(data.attachments)}
-                ${this.renderRouting(data.routing)}
-                ${this.renderHeaderForensics(data.routing_forensics)}
-            </div>
+            ${this.renderTabs(data)}
         `;
 
-        this.container.innerHTML = html;
+        this.attachHandlers();
     }
 
     /**
-     * Render the conclusion card — a concise summary of the key "official
-     * artifacts" extracted from the message.
+     * Verdict summary header: score ring + verdict + quick stats.
+     */
+    renderSummary(data) {
+        const risk = data.risk_assessment || {};
+        const level = risk.level || 'unknown';
+        const score = Number.isFinite(risk.score) ? risk.score : 0;
+        const verdict = risk.verdict || 'Unable to determine risk level';
+        const fileName = (data.metadata && data.metadata.filename) || '';
+
+        const urls = data.urls || {};
+        const att = data.attachments || {};
+        const routing = data.routing || {};
+        const findings = (data.suspicions || []).length;
+
+        const stat = (value, label, flag) => `
+            <div class="stat">
+                <span class="stat-value ${flag ? 'flag' : ''}">${this.escapeHtml(String(value))}</span>
+                <span class="stat-label">${this.escapeHtml(label)}</span>
+            </div>
+        `;
+
+        return `
+            <div class="verdict-card ${this.escapeHtml(level)}">
+                <div class="score-ring" style="--val:${score}">
+                    <div class="score-ring-inner">
+                        <span class="score-num">${score}</span>
+                        <span class="score-den">/100</span>
+                    </div>
+                </div>
+                <div class="verdict-body">
+                    <span class="verdict-level">${this.escapeHtml(t(level))} ${this.escapeHtml(t('Risk'))}</span>
+                    <div class="verdict-text">${this.escapeHtml(t(verdict))}</div>
+                    ${fileName ? `<div class="verdict-file">${this.escapeHtml(fileName)}</div>` : ''}
+                    <div class="quick-stats">
+                        ${stat(`${urls.suspicious_count || 0}/${urls.total_count || 0}`, t('URLs'), (urls.suspicious_count || 0) > 0)}
+                        ${stat(`${att.suspicious_count || 0}/${att.total_count || 0}`, t('Attachments'), (att.suspicious_count || 0) > 0)}
+                        ${stat(findings, t('Findings'), findings > 0)}
+                        ${stat(routing.hop_count || 0, t('Hops'), false)}
+                    </div>
+                    <div class="verdict-actions">
+                        <button type="button" class="btn btn-secondary btn-sm analyze-another">${this.escapeHtml(t('Analyze another email'))}</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Conclusion card — the key "official artifacts", with copy + pivots.
      */
     renderConclusion(conclusion) {
         if (!conclusion) return '';
 
-        // [label, value, renderAsCode]
         const rows = [
-            ['Sender Address', conclusion.sender_address, false],
-            ['Subject Line', conclusion.subject, false],
-            ['Recipients', conclusion.recipients, false],
-            ['Date + Time', conclusion.date, false],
-            ['Sending Server IP', conclusion.sending_server_ip, true],
-            ['Reverse DNS of Sending Server', conclusion.reverse_dns, true],
-            ['Reply-To Address', conclusion.reply_to, false],
+            [t('Sender Address'), this.valueCell(conclusion.sender_address, { copy: true })],
+            [t('Subject Line'), this.valueCell(conclusion.subject, {})],
+            [t('Recipients'), this.valueCell(conclusion.recipients, {})],
+            [t('Date + Time'), this.valueCell(conclusion.date, {})],
+            [t('Sending Server IP'), this.valueCell(conclusion.sending_server_ip, { code: true, copy: true, ip: true })],
+            [t('Reverse DNS of Sending Server'), this.valueCell(conclusion.reverse_dns, { code: true, copy: true })],
+            [t('Reply-To Address'), this.valueCell(conclusion.reply_to, { copy: true })],
         ];
 
-        const rowsHtml = rows.map(([label, value, asCode]) => {
-            const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
-            let cell;
-            if (!hasValue) {
-                cell = `<span class="muted">${t('N/A')}</span>`;
-            } else if (asCode) {
-                cell = `<code>${this.escapeHtml(String(value))}</code>`;
-            } else {
-                cell = this.escapeHtml(String(value));
-            }
-            return `
-                <tr>
-                    <th>${t(label)}</th>
-                    <td>${cell}</td>
-                </tr>
-            `;
-        }).join('');
+        const rowsHtml = rows.map(([label, cell]) => `
+            <tr><th>${this.escapeHtml(label)}</th><td>${cell}</td></tr>
+        `).join('');
 
         return `
             <div class="result-card conclusion-card">
@@ -88,41 +117,70 @@ class ResultsRenderer {
     }
 
     /**
-     * Render risk assessment banner
+     * "Why this score" — the backend's ordered factor breakdown.
      */
-    renderRiskBanner(risk) {
-        if (!risk) return '';
+    renderRiskFactors(risk) {
+        const factors = (risk && Array.isArray(risk.factors)) ? risk.factors : [];
 
-        const level = risk.level || 'unknown';
-        const score = risk.score || 0;
-        const verdict = risk.verdict || 'Unable to determine risk level';
+        let body;
+        if (factors.length === 0) {
+            body = `<div class="empty-state">${t('No scoring factors — no strong signals detected')}</div>`;
+        } else {
+            body = factors.map(f => {
+                const pts = Number(f.points) || 0;
+                const sign = pts < 0 ? 'sub' : 'add';
+                const ptsLabel = `${pts > 0 ? '+' : ''}${pts} ${t('pts')}`;
+                const severity = f.severity || 'info';
+                return `
+                    <div class="factor-item">
+                        <span class="factor-dot ${this.escapeHtml(severity)}"></span>
+                        <div class="factor-main">
+                            <div class="factor-label">${this.escapeHtml(f.label || '')}</div>
+                            ${f.detail ? `<div class="factor-detail">${this.escapeHtml(f.detail)}</div>` : ''}
+                        </div>
+                        <span class="factor-points ${sign}">${this.escapeHtml(ptsLabel)}</span>
+                    </div>
+                `;
+            }).join('');
+        }
 
         return `
-            <div class="risk-banner ${level}">
-                <div class="risk-level">${this.escapeHtml(t(level))} ${this.escapeHtml(t('Risk'))}</div>
-                <div class="risk-score">${score}/100</div>
-                <div class="risk-verdict">${this.escapeHtml(t(verdict))}</div>
+            <div class="result-card factors-card">
+                <div class="result-card-header">
+                    <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    <h3 class="result-card-title">${t('Why this score')}</h3>
+                </div>
+                ${body}
             </div>
         `;
     }
 
     /**
-     * Render suspicions list
+     * Render suspicions list (severity-ordered)
      */
     renderSuspicions(suspicions) {
         if (!suspicions || suspicions.length === 0) {
             return '';
         }
 
-        const items = suspicions.map(s => `
-            <li class="suspicion-item ${s.severity}">
-                <div class="suspicion-category">${this.escapeHtml(s.category)} <span class="pill ${s.severity}">${this.escapeHtml(t(s.severity))}</span></div>
+        const order = { critical: 0, high: 1, medium: 2, low: 3 };
+        const sorted = [...suspicions].sort(
+            (a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9)
+        );
+
+        const items = sorted.map(s => `
+            <li class="suspicion-item ${this.escapeHtml(s.severity)}">
+                <div class="suspicion-category">${this.escapeHtml(s.category)} <span class="pill ${this.escapeHtml(s.severity)}">${this.escapeHtml(t(s.severity))}</span></div>
                 <div>${this.escapeHtml(s.message)}</div>
             </li>
         `).join('');
 
         return `
-            <div class="result-card">
+            <div class="result-card suspicions-card">
                 <div class="result-card-header">
                     <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
@@ -134,6 +192,38 @@ class ResultsRenderer {
                 <ul class="suspicions-list">${items}</ul>
             </div>
         `;
+    }
+
+    /**
+     * Detail tabs. Every panel is rendered into the DOM (hidden unless active)
+     * so printing shows everything and nothing is lost on tab switch.
+     */
+    renderTabs(data) {
+        const routingContent = `${this.renderRouting(data.routing)}${this.renderHeaderForensics(data.routing_forensics)}`;
+
+        const tabs = [
+            { label: t('Authentication'), content: this.renderAuthentication(data.authentication) },
+            { label: t('Sender & IP'), content: this.renderSenderInfo(data.sender_info) },
+            { label: t('Content Analysis'), content: this.renderContent(data.content) },
+            { label: t('URLs'), count: (data.urls || {}).total_count, content: this.renderURLs(data.urls) },
+            { label: t('Attachments'), count: (data.attachments || {}).total_count, content: this.renderAttachments(data.attachments) },
+            { label: t('Routing'), content: routingContent },
+            { label: t('Headers'), content: this.renderHeaders(data.headers) },
+        ];
+
+        const nav = tabs.map((tb, i) => `
+            <button type="button" class="tab-btn ${i === 0 ? 'active' : ''}" data-tab="${i}">
+                ${this.escapeHtml(tb.label)}
+                ${typeof tb.count === 'number' ? `<span class="tab-count">${tb.count}</span>` : ''}
+            </button>
+        `).join('');
+
+        const panels = tabs.map((tb, i) => {
+            const content = (tb.content || '').trim() || `<div class="empty-state">${t('Nothing to show here')}</div>`;
+            return `<div class="tab-panel ${i === 0 ? 'active' : ''}" data-tab="${i}">${content}</div>`;
+        }).join('');
+
+        return `<div class="tabs"><div class="tabs-nav">${nav}</div>${panels}</div>`;
     }
 
     /**
@@ -152,34 +242,13 @@ class ResultsRenderer {
                     <h3 class="result-card-title">${t('Email Headers')}</h3>
                 </div>
                 <table class="data-table">
-                    <tr>
-                        <th>${t('From')}</th>
-                        <td>${this.escapeHtml(headers.sender || t('N/A'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('To / Cc')}</th>
-                        <td>${this.escapeHtml(headers.recipients || t('N/A'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Subject')}</th>
-                        <td>${this.escapeHtml(headers.subject || t('N/A'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Date')}</th>
-                        <td>${this.escapeHtml(headers.date || t('N/A'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Reply-To')}</th>
-                        <td>${this.escapeHtml(headers.reply_to || t('N/A'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Return-Path')}</th>
-                        <td>${this.escapeHtml(headers.return_path || t('N/A'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Message-ID')}</th>
-                        <td><code>${this.escapeHtml(headers.message_id || t('N/A'))}</code></td>
-                    </tr>
+                    <tr><th>${t('From')}</th><td>${this.escapeHtml(headers.sender || t('N/A'))}</td></tr>
+                    <tr><th>${t('To / Cc')}</th><td>${this.escapeHtml(headers.recipients || t('N/A'))}</td></tr>
+                    <tr><th>${t('Subject')}</th><td>${this.escapeHtml(headers.subject || t('N/A'))}</td></tr>
+                    <tr><th>${t('Date')}</th><td>${this.escapeHtml(headers.date || t('N/A'))}</td></tr>
+                    <tr><th>${t('Reply-To')}</th><td>${this.escapeHtml(headers.reply_to || t('N/A'))}</td></tr>
+                    <tr><th>${t('Return-Path')}</th><td>${this.escapeHtml(headers.return_path || t('N/A'))}</td></tr>
+                    <tr><th>${t('Message-ID')}</th><td><code>${this.escapeHtml(headers.message_id || t('N/A'))}</code></td></tr>
                 </table>
             </div>
         `;
@@ -209,34 +278,13 @@ class ResultsRenderer {
                     <h3 class="result-card-title">${t('Authentication')}</h3>
                 </div>
                 <table class="data-table">
-                    <tr>
-                        <th>${t('Untrusted header claims')}</th>
-                        <td>${spfClaim} ${dkimClaim} ${dmarcClaim}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Independent verification')}</th>
-                        <td>${verifiedDkim}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('DKIM alignment')}</th>
-                        <td>${this.escapeHtml(alignment)}</td>
-                    </tr>
-                    <tr>
-                        <th>SPF / DMARC</th>
-                        <td class="muted">${t('SPF and DMARC cannot be verified from an uploaded file alone')}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('SPF Record')}</th>
-                        <td>${auth.spf ? `<code>${this.escapeHtml(auth.spf)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('DMARC Record')}</th>
-                        <td>${auth.dmarc ? `<code>${this.escapeHtml(auth.dmarc)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('DKIM Record')}</th>
-                        <td>${auth.dkim ? `<code>${this.escapeHtml(auth.dkim)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td>
-                    </tr>
+                    <tr><th>${t('Untrusted header claims')}</th><td>${spfClaim} ${dkimClaim} ${dmarcClaim}</td></tr>
+                    <tr><th>${t('Independent verification')}</th><td>${verifiedDkim}</td></tr>
+                    <tr><th>${t('DKIM alignment')}</th><td>${this.escapeHtml(alignment)}</td></tr>
+                    <tr><th>SPF / DMARC</th><td class="muted">${t('SPF and DMARC cannot be verified from an uploaded file alone')}</td></tr>
+                    <tr><th>${t('SPF Record')}</th><td>${auth.spf ? `<code>${this.escapeHtml(auth.spf)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td></tr>
+                    <tr><th>${t('DMARC Record')}</th><td>${auth.dmarc ? `<code>${this.escapeHtml(auth.dmarc)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td></tr>
+                    <tr><th>${t('DKIM Record')}</th><td>${auth.dkim ? `<code>${this.escapeHtml(auth.dkim)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td></tr>
                 </table>
             </div>
         `;
@@ -251,7 +299,6 @@ class ResultsRenderer {
         }
 
         const passResults = ['pass', 'ok'];
-        const warnResults = ['none', 'neutral', 'temperror'];
         const failResults = ['fail', 'softfail', 'permerror'];
 
         let className = trusted ? 'warning' : 'info';
@@ -262,7 +309,7 @@ class ResultsRenderer {
     }
 
     /**
-     * Render sender info
+     * Render sender info (with reverse DNS + investigation pivots)
      */
     renderSenderInfo(sender) {
         if (!sender) return '';
@@ -273,7 +320,6 @@ class ResultsRenderer {
         if (abuseScore !== undefined) {
             const className = abuseScore >= 70 ? 'danger' : abuseScore > 0 ? 'warning' : 'success';
             abusePill = `<span class="pill ${className}">Score: ${abuseScore}%</span>`;
-
             if (sender.abuse_report) {
                 abusePill += ` <span class="pill info">Reports: ${sender.abuse_report.totalReports || 0}</span>`;
             }
@@ -295,22 +341,11 @@ class ResultsRenderer {
                     <h3 class="result-card-title">${t('Sender Information')}</h3>
                 </div>
                 <table class="data-table">
-                    <tr>
-                        <th>${t('Domain')}</th>
-                        <td>${this.escapeHtml(sender.domain || t('N/A'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Sender IP')}</th>
-                        <td>${this.escapeHtml(sender.ip || t('Not found'))}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('IP Reputation')}</th>
-                        <td>${abusePill}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('WHOIS')}</th>
-                        <td>${whoisInfo}</td>
-                    </tr>
+                    <tr><th>${t('Domain')}</th><td>${this.valueCell(sender.domain, { copy: true, domain: true })}</td></tr>
+                    <tr><th>${t('Sender IP')}</th><td>${this.valueCell(sender.ip, { code: true, copy: true, ip: true, empty: t('Not found') })}</td></tr>
+                    <tr><th>${t('Reverse DNS')}</th><td>${this.valueCell(sender.reverse_dns, { code: true, copy: true, empty: t('Not found') })}</td></tr>
+                    <tr><th>${t('IP Reputation')}</th><td>${abusePill}</td></tr>
+                    <tr><th>${t('WHOIS')}</th><td>${whoisInfo}</td></tr>
                 </table>
             </div>
         `;
@@ -330,39 +365,17 @@ class ResultsRenderer {
                         <polyline points="14,2 14,8 20,8"/>
                         <line x1="16" y1="13" x2="8" y2="13"/>
                         <line x1="16" y1="17" x2="8" y2="17"/>
-                        <polyline points="10,9 9,9 8,9"/>
                     </svg>
                     <h3 class="result-card-title">${t('Content Analysis')}</h3>
                 </div>
                 <table class="data-table">
-                    <tr>
-                        <th>${t('Urgent Phrases')}</th>
-                        <td>${this.renderList(content.urgent_phrases)}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Generic Greetings')}</th>
-                        <td>${this.renderList(content.generic_greetings)}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Credential Requests')}</th>
-                        <td>${this.renderList(content.credential_requests)}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('HTML Forms')}</th>
-                        <td>${content.forms || 0}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Scripts')}</th>
-                        <td>${content.scripts || 0}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Hidden Elements')}</th>
-                        <td>${content.hidden_elements || 0}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('YARA Matches')}</th>
-                        <td>${this.renderList(content.yara_matches)}</td>
-                    </tr>
+                    <tr><th>${t('Urgent Phrases')}</th><td>${this.renderList(content.urgent_phrases)}</td></tr>
+                    <tr><th>${t('Generic Greetings')}</th><td>${this.renderList(content.generic_greetings)}</td></tr>
+                    <tr><th>${t('Credential Requests')}</th><td>${this.renderList(content.credential_requests)}</td></tr>
+                    <tr><th>${t('HTML Forms')}</th><td>${content.forms || 0}</td></tr>
+                    <tr><th>${t('Scripts')}</th><td>${content.scripts || 0}</td></tr>
+                    <tr><th>${t('Hidden Elements')}</th><td>${content.hidden_elements || 0}</td></tr>
+                    <tr><th>${t('YARA Matches')}</th><td>${this.renderList(content.yara_matches)}</td></tr>
                 </table>
             </div>
         `;
@@ -391,11 +404,11 @@ class ResultsRenderer {
             <div class="url-item ${url.is_suspicious ? 'suspicious' : ''}">
                 <div class="url-link">${this.escapeHtml(url.url)}</div>
                 <div class="url-domain">${t('Domain')}: ${this.escapeHtml(url.domain)}</div>
-                ${url.issues.length > 0 ? `
+                ${url.issues && url.issues.length > 0 ? `
                     <div class="url-issues">
                         ${url.issues.map(issue => `<span class="pill danger">${this.escapeHtml(issue)}</span>`).join('')}
-                    </div>
-                ` : ''}
+                    </div>` : ''}
+                ${url.domain ? `<div class="value-actions">${this.extBtn(`https://www.virustotal.com/gui/domain/${encodeURIComponent(url.domain)}`, 'VirusTotal')}</div>` : ''}
             </div>
         `).join('');
 
@@ -414,7 +427,7 @@ class ResultsRenderer {
     }
 
     /**
-     * Render attachments
+     * Render attachments (with hash copy + VirusTotal lookup)
      */
     renderAttachments(attachments) {
         if (!attachments || attachments.total_count === 0) {
@@ -439,15 +452,13 @@ class ResultsRenderer {
                         ${this.escapeHtml(att.content_type || t('Unknown type'))} |
                         ${this.escapeHtml(att.size_formatted || att.size + ' bytes')}
                     </div>
-                    ${att.issues.length > 0 ? `
+                    ${att.issues && att.issues.length > 0 ? `
                         <div class="url-issues" style="margin-top: 0.5rem;">
                             ${att.issues.map(issue => `<span class="pill danger">${this.escapeHtml(issue)}</span>`).join('')}
-                        </div>
-                    ` : ''}
+                        </div>` : ''}
+                    ${att.sha256 ? `<div class="value-actions">${this.copyBtn(att.sha256)}${this.extBtn(`https://www.virustotal.com/gui/file/${encodeURIComponent(att.sha256)}`, 'VirusTotal')}</div>` : ''}
                 </div>
-                ${att.severity && att.is_suspicious ? `
-                    <span class="attachment-severity ${att.severity}">${this.escapeHtml(t(att.severity))}</span>
-                ` : ''}
+                ${att.severity && att.is_suspicious ? `<span class="attachment-severity ${this.escapeHtml(att.severity)}">${this.escapeHtml(t(att.severity))}</span>` : ''}
             </div>
         `).join('');
 
@@ -482,12 +493,8 @@ class ResultsRenderer {
                     <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="2" x2="12" y2="6"/>
                         <line x1="12" y1="18" x2="12" y2="22"/>
-                        <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/>
-                        <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
                         <line x1="2" y1="12" x2="6" y2="12"/>
                         <line x1="18" y1="12" x2="22" y2="12"/>
-                        <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/>
-                        <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
                     </svg>
                     <h3 class="result-card-title">${t('Email Routing')} (${routing.hop_count} ${t('hops')})</h3>
                 </div>
@@ -515,25 +522,107 @@ class ResultsRenderer {
                     <h3 class="result-card-title">${t('Header Forensics')}</h3>
                 </div>
                 <table class="data-table">
-                    <tr>
-                        <th>${t('Hop Count')}</th>
-                        <td>${forensics.hop_count}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Originating IP')}</th>
-                        <td>${forensics.originating_ip ? `<code>${this.escapeHtml(forensics.originating_ip)}</code>` : `<span class="muted">${t('Not detected')}</span>`}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Sender Timezone')}</th>
-                        <td>${forensics.timezone_offset ? `<code>${this.escapeHtml(forensics.timezone_offset)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td>
-                    </tr>
-                    <tr>
-                        <th>${t('Public IPs in Route')}</th>
-                        <td>${ipBadges}</td>
-                    </tr>
+                    <tr><th>${t('Hop Count')}</th><td>${forensics.hop_count}</td></tr>
+                    <tr><th>${t('Originating IP')}</th><td>${this.valueCell(forensics.originating_ip, { code: true, copy: true, ip: true, empty: t('Not detected') })}</td></tr>
+                    <tr><th>${t('Sender Timezone')}</th><td>${forensics.timezone_offset ? `<code>${this.escapeHtml(forensics.timezone_offset)}</code>` : `<span class="muted">${t('Not found')}</span>`}</td></tr>
+                    <tr><th>${t('Public IPs in Route')}</th><td>${ipBadges}</td></tr>
                 </table>
             </div>
         `;
+    }
+
+    /**
+     * Render a value cell with optional copy button and lookup links.
+     */
+    valueCell(value, opts = {}) {
+        const has = value !== null && value !== undefined && String(value).trim() !== '';
+        if (!has) {
+            return `<span class="muted">${this.escapeHtml(opts.empty || t('N/A'))}</span>`;
+        }
+
+        const v = String(value);
+        const display = opts.code
+            ? `<code>${this.escapeHtml(v)}</code>`
+            : this.escapeHtml(v);
+
+        const actions = [];
+        if (opts.copy) actions.push(this.copyBtn(v));
+        if (opts.ip) {
+            actions.push(this.extBtn(`https://www.virustotal.com/gui/ip-address/${encodeURIComponent(v)}`, 'VirusTotal'));
+            actions.push(this.extBtn(`https://www.abuseipdb.com/check/${encodeURIComponent(v)}`, 'AbuseIPDB'));
+        }
+        if (opts.domain) {
+            actions.push(this.extBtn(`https://www.virustotal.com/gui/domain/${encodeURIComponent(v)}`, 'VirusTotal'));
+        }
+
+        const actionsHtml = actions.length ? `<div class="value-actions">${actions.join('')}</div>` : '';
+        return `${display}${actionsHtml}`;
+    }
+
+    copyBtn(value) {
+        return `<button type="button" class="mini-btn copy-btn" data-copy="${this.escapeAttr(String(value))}">⧉ ${t('Copy')}</button>`;
+    }
+
+    extBtn(href, label) {
+        return `<a class="mini-btn" href="${this.escapeAttr(href)}" target="_blank" rel="noopener noreferrer">↗ ${this.escapeHtml(label)}</a>`;
+    }
+
+    /**
+     * Wire up tab switching, copy buttons, and the "analyze another" shortcut.
+     */
+    attachHandlers() {
+        const root = this.container;
+        if (!root) return;
+
+        root.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const idx = btn.getAttribute('data-tab');
+                root.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+                root.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.getAttribute('data-tab') === idx));
+            });
+        });
+
+        root.querySelectorAll('.copy-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const val = btn.getAttribute('data-copy') || '';
+                await this.copyToClipboard(val);
+                const original = btn.innerHTML;
+                btn.classList.add('copied');
+                btn.textContent = `✓ ${t('Copied')}`;
+                setTimeout(() => {
+                    btn.classList.remove('copied');
+                    btn.innerHTML = original;
+                }, 1400);
+            });
+        });
+
+        const another = root.querySelector('.analyze-another');
+        if (another) {
+            another.addEventListener('click', () => {
+                const drop = document.getElementById('dropZone');
+                const input = document.getElementById('fileInput');
+                if (drop) drop.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                if (input) input.click();
+            });
+        }
+    }
+
+    async copyToClipboard(text) {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+                return;
+            }
+        } catch (e) { /* fall through to legacy path */ }
+
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+        document.body.removeChild(ta);
     }
 
     /**
@@ -547,13 +636,25 @@ class ResultsRenderer {
     }
 
     /**
-     * Escape HTML
+     * Escape HTML text content
      */
     escapeHtml(text) {
-        if (!text) return '';
+        if (text === null || text === undefined) return '';
         const div = document.createElement('div');
-        div.textContent = text;
+        div.textContent = String(text);
         return div.innerHTML;
+    }
+
+    /**
+     * Escape a value for safe use inside a double-quoted HTML attribute
+     */
+    escapeAttr(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
 
     /**
@@ -561,7 +662,7 @@ class ResultsRenderer {
      */
     renderError(error) {
         this.container.innerHTML = `
-            <div class="result-card" style="background: rgba(239, 68, 68, 0.1); border-color: var(--color-danger);">
+            <div class="result-card" style="border-color: var(--danger);">
                 <h3>${t('Error')}</h3>
                 <p>${this.escapeHtml(error)}</p>
             </div>

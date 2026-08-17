@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.uiController.initRetryButton();
     window.uiController.initDownloadButton();
     window.uiController.initPrintButton();
+    window.uiController.initThemeToggle();
     window.uiController.initHistory();
 
     if (window.uiController.elements.apiDestination) {

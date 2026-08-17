@@ -65,6 +65,34 @@ const I18N_TRANSLATIONS = {
         'Comprehensive threat assessment': 'הערכת איום מקיפה',
         'Email is processed by the configured analysis server. See PRIVACY.md before uploading sensitive material.': 'המייל מעובד בשרת הניתוח המוגדר. קראו את PRIVACY.md לפני העלאת חומר רגיש.',
 
+        // Upload / layout
+        'Advanced options': 'אפשרויות מתקדמות',
+        'Analyze another email': 'ניתוח מייל נוסף',
+        'Switch to dark theme': 'מעבר למצב כהה',
+        'Switch to light theme': 'מעבר למצב בהיר',
+
+        // Results — summary + score breakdown
+        'Why this score': 'מדוע הציון הזה',
+        'No scoring factors — no strong signals detected': 'אין גורמי ניקוד — לא זוהו סימנים חזקים',
+        'Findings': 'ממצאים',
+        'Hops': 'תחנות',
+        'Overview': 'סקירה',
+        'Details': 'פרטים',
+        'pts': 'נק׳',
+
+        // Results — tabs
+        'Sender & IP': 'שולח ו-IP',
+        'Routing': 'ניתוב',
+        'Headers': 'כותרות',
+        'Nothing to show here': 'אין מה להציג כאן',
+
+        // Pivot actions
+        'Copy': 'העתקה',
+        'Copied': 'הועתק',
+        'Look up': 'בדיקה',
+        'Search': 'חיפוש',
+        'Reverse DNS': 'DNS הפוך',
+
         // Results — conclusion (official artifacts)
         'Conclusion': 'סיכום',
         'Official artifacts extracted from this email': 'ממצאים רשמיים שחולצו מהמייל',
@@ -186,6 +214,9 @@ function applyI18n() {
     // Re-render dynamic sections in the new language
     if (window.uiController && typeof window.uiController.renderHistory === 'function') {
         window.uiController.renderHistory();
+    }
+    if (window.uiController && typeof window.uiController._applyThemeLabel === 'function') {
+        window.uiController._applyThemeLabel();
     }
     if (window.resultsRenderer && window.lastAnalysisResult) {
         window.resultsRenderer.render(window.lastAnalysisResult);
