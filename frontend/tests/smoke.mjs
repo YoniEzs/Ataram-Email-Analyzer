@@ -47,9 +47,18 @@ await page.waitForTimeout(200);
 expect(await page.evaluate(() => document.documentElement.dir) === 'rtl', 'hebrew switches to rtl');
 expect((await page.locator('.upload-header h2').textContent()).trim() === 'ניתוח מייל', 'hebrew heading');
 
-const cardTitles = await page.evaluate(() => {
+const render = await page.evaluate(() => {
     window.lastAnalysisResult = {
         risk_assessment: { level: 'high', score: 62, verdict: 'SUSPICIOUS - Exercise extreme caution', whitelist_applied: false },
+        conclusion: {
+            sender_address: 'a@b.com',
+            subject: 'test',
+            recipients: 'c@d.com',
+            date: 'Mon, 09 Mar 2026 09:00:00 +0000',
+            sending_server_ip: '8.8.8.8',
+            reverse_dns: 'dns.google',
+            reply_to: 'r@b.com',
+        },
         suspicions: [{ category: 'authentication', severity: 'high', message: 'SPF check failed: fail' }],
         headers: { sender: 'a@b.com', subject: 'test' },
         authentication: { auth_analysis: { spf: 'fail' } },
@@ -61,9 +70,16 @@ const cardTitles = await page.evaluate(() => {
         routing_forensics: { hop_count: 1, public_ips: [], originating_ip: null, timezone_offset: null },
     };
     window.resultsRenderer.render(window.lastAnalysisResult);
-    return Array.from(document.querySelectorAll('.result-card-title')).map(e => e.textContent.trim());
+    const conclusionCard = document.querySelector('.conclusion-card');
+    return {
+        cardTitles: Array.from(document.querySelectorAll('.result-card-title')).map(e => e.textContent.trim()),
+        conclusionText: conclusionCard ? conclusionCard.textContent : '',
+    };
 });
-expect(cardTitles.includes('כותרות המייל'), 'results render in hebrew');
+expect(render.cardTitles.includes('כותרות המייל'), 'results render in hebrew');
+expect(render.cardTitles.includes('סיכום'), 'conclusion card renders in hebrew');
+expect(render.conclusionText.includes('8.8.8.8'), 'conclusion shows sending server IP');
+expect(render.conclusionText.includes('dns.google'), 'conclusion shows reverse DNS');
 
 await page.click('#langToggle');
 await page.waitForTimeout(200);

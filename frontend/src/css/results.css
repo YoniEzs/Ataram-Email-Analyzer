@@ -61,6 +61,19 @@
     margin: 0 auto;
 }
 
+/* === Conclusion (official artifacts summary) === */
+.conclusion-card {
+    margin-bottom: 1.5rem;
+    border-color: var(--primary);
+    border-left-width: 4px;
+}
+
+.conclusion-subtitle {
+    margin: -0.5rem 0 1rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
 /* === Section Grid === */
 .results-grid {
     display: grid;

@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import dns.resolver
+    import dns.reversename
     import dns.exception
     DNS_AVAILABLE = True
 except ImportError:
@@ -102,3 +103,33 @@ class DNSCheckerService:
             if re.search(r'(?:^|;)\s*p=', record):
                 return record
         return None
+
+    def reverse_dns(self, ip: str) -> Optional[str]:
+        """Resolve the PTR (reverse DNS) hostname for an IP address.
+
+        Returns the first PTR hostname (without the trailing dot) or None
+        when the address has no PTR record or the lookup fails. Results are
+        cached, including "no record", so repeat lookups don't re-query DNS.
+        """
+        if not ip:
+            return None
+
+        cache_key = f"ptr:{ip}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            # "" is the cached sentinel for a confirmed "no PTR record".
+            return cached or None
+
+        try:
+            rev_name = dns.reversename.from_address(ip)
+            answers = dns.resolver.resolve(rev_name, 'PTR', lifetime=self.timeout)
+            hostnames = [str(rdata.target).rstrip('.') for rdata in answers]
+            result = hostnames[0] if hostnames else None
+            cache_set(cache_key, result or "", 3600)
+            return result
+        except dns.exception.DNSException:
+            cache_set(cache_key, "", 3600)
+            return None
+        except Exception as e:
+            logger.warning(f"[DNSCheckerService] Reverse DNS error for {ip}: {e}")
+            return None

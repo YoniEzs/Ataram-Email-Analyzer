@@ -19,6 +19,7 @@ class ResultsRenderer {
 
         const html = `
             ${this.renderRiskBanner(data.risk_assessment)}
+            ${this.renderConclusion(data.conclusion)}
             ${this.renderSuspicions(data.suspicions)}
             <div class="results-grid">
                 ${this.renderHeaders(data.headers)}
@@ -33,6 +34,57 @@ class ResultsRenderer {
         `;
 
         this.container.innerHTML = html;
+    }
+
+    /**
+     * Render the conclusion card — a concise summary of the key "official
+     * artifacts" extracted from the message.
+     */
+    renderConclusion(conclusion) {
+        if (!conclusion) return '';
+
+        // [label, value, renderAsCode]
+        const rows = [
+            ['Sender Address', conclusion.sender_address, false],
+            ['Subject Line', conclusion.subject, false],
+            ['Recipients', conclusion.recipients, false],
+            ['Date + Time', conclusion.date, false],
+            ['Sending Server IP', conclusion.sending_server_ip, true],
+            ['Reverse DNS of Sending Server', conclusion.reverse_dns, true],
+            ['Reply-To Address', conclusion.reply_to, false],
+        ];
+
+        const rowsHtml = rows.map(([label, value, asCode]) => {
+            const hasValue = value !== null && value !== undefined && String(value).trim() !== '';
+            let cell;
+            if (!hasValue) {
+                cell = `<span class="muted">${t('N/A')}</span>`;
+            } else if (asCode) {
+                cell = `<code>${this.escapeHtml(String(value))}</code>`;
+            } else {
+                cell = this.escapeHtml(String(value));
+            }
+            return `
+                <tr>
+                    <th>${t(label)}</th>
+                    <td>${cell}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="result-card conclusion-card">
+                <div class="result-card-header">
+                    <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 11l3 3L22 4"/>
+                        <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
+                    </svg>
+                    <h3 class="result-card-title">${t('Conclusion')}</h3>
+                </div>
+                <p class="conclusion-subtitle">${t('Official artifacts extracted from this email')}</p>
+                <table class="data-table">${rowsHtml}</table>
+            </div>
+        `;
     }
 
     /**

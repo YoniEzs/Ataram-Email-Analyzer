@@ -65,6 +65,17 @@ const I18N_TRANSLATIONS = {
         'Comprehensive threat assessment': 'הערכת איום מקיפה',
         'Email is processed by the configured analysis server. See PRIVACY.md before uploading sensitive material.': 'המייל מעובד בשרת הניתוח המוגדר. קראו את PRIVACY.md לפני העלאת חומר רגיש.',
 
+        // Results — conclusion (official artifacts)
+        'Conclusion': 'סיכום',
+        'Official artifacts extracted from this email': 'ממצאים רשמיים שחולצו מהמייל',
+        'Sender Address': 'כתובת השולח',
+        'Subject Line': 'שורת הנושא',
+        'Recipients': 'נמענים',
+        'Date + Time': 'תאריך ושעה',
+        'Sending Server IP': 'כתובת ה-IP של שרת השליחה',
+        'Reverse DNS of Sending Server': 'DNS הפוך של שרת השליחה',
+        'Reply-To Address': 'כתובת השב־אל',
+
         // Results — cards and rows
         'Email Headers': 'כותרות המייל',
         'From': 'מאת',

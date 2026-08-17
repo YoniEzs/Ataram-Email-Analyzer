@@ -178,6 +178,30 @@ OPENAPI_SPEC = {
                 'description': 'Complete analysis report',
                 'properties': {
                     'timestamp': {'type': 'string', 'format': 'date-time'},
+                    'conclusion': {
+                        'type': 'object',
+                        'description': (
+                            'Concise summary of the key "official artifacts" '
+                            'extracted from the message.'
+                        ),
+                        'properties': {
+                            'sender_address': {'type': 'string', 'nullable': True},
+                            'subject': {'type': 'string', 'nullable': True},
+                            'recipients': {
+                                'type': 'string',
+                                'nullable': True,
+                                'description': 'Visible To/Cc recipients; BCC is never present in delivered headers',
+                            },
+                            'date': {'type': 'string', 'nullable': True},
+                            'sending_server_ip': {'type': 'string', 'nullable': True},
+                            'reverse_dns': {
+                                'type': 'string',
+                                'nullable': True,
+                                'description': 'PTR record of the sending server IP',
+                            },
+                            'reply_to': {'type': 'string', 'nullable': True},
+                        },
+                    },
                     'headers': {'type': 'object'},
                     'authentication': {
                         'type': 'object',

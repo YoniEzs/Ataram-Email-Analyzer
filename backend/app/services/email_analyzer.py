@@ -158,6 +158,7 @@ class EmailAnalyzerService:
         whois_data = lookups.get('whois')
         abuse_data = lookups.get('abuse')
         verification = lookups.get('verify')
+        reverse_dns = lookups.get('reverse_dns')
 
         # Merge VirusTotal verdicts into the attachment results
         self._apply_virustotal(lookups.get('vt') or {}, attachment_analysis)
@@ -192,6 +193,19 @@ class EmailAnalyzerService:
 
         return {
             'timestamp': datetime.now(timezone.utc).isoformat(),
+            # Concise "official artifacts" summary — the key, verifiable facts
+            # extracted from the message, surfaced up front as a conclusion.
+            'conclusion': {
+                'sender_address': headers.get('sender'),
+                'subject': headers.get('subject'),
+                # BCC recipients never appear in delivered headers, so this
+                # reflects only the visible To/Cc recipients.
+                'recipients': headers.get('recipients'),
+                'date': headers.get('date'),
+                'sending_server_ip': sender_ip,
+                'reverse_dns': reverse_dns,
+                'reply_to': headers.get('reply_to'),
+            },
             'headers': {
                 'sender': headers.get('sender'),
                 'recipients': headers.get('recipients'),
@@ -213,6 +227,7 @@ class EmailAnalyzerService:
             'sender_info': {
                 'domain': sender_domain,
                 'ip': sender_ip,
+                'reverse_dns': reverse_dns,
                 'whois': whois_data,
                 'abuse_report': abuse_data,
             },
@@ -309,6 +324,8 @@ class EmailAnalyzerService:
                 jobs['whois'] = (self.whois_service.lookup, (sender_domain,))
         if dkim_domain and dkim_selector:
             jobs['dkim'] = (self.dns_checker.check_dkim, (dkim_domain, dkim_selector))
+        if sender_ip:
+            jobs['reverse_dns'] = (self.dns_checker.reverse_dns, (sender_ip,))
         if self.ip_reputation and sender_ip:
             jobs['abuse'] = (self.ip_reputation.check_ip, (sender_ip,))
         if self.virustotal and attachment_hashes:
