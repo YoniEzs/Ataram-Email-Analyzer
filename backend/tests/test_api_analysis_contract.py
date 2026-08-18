@@ -30,6 +30,15 @@ def test_analyze_response_includes_new_contract_fields(client, monkeypatch):
         def analyze(self, parsed_data):
             return {
                 "timestamp": "2026-03-09T10:00:00",
+                "conclusion": {
+                    "sender_address": None,
+                    "subject": None,
+                    "recipients": None,
+                    "date": None,
+                    "sending_server_ip": None,
+                    "reverse_dns": None,
+                    "reply_to": None,
+                },
                 "headers": {},
                 "authentication": {},
                 "sender_info": {},
@@ -86,6 +95,16 @@ def test_analyze_response_includes_new_contract_fields(client, monkeypatch):
     assert response.status_code == 200
     payload = response.get_json()
     assert "routing_forensics" in payload
+    assert "conclusion" in payload
+    assert set(payload["conclusion"]) == {
+        "sender_address",
+        "subject",
+        "recipients",
+        "date",
+        "sending_server_ip",
+        "reverse_dns",
+        "reply_to",
+    }
     assert "whitelist_applied" in payload["risk_assessment"]
     assert payload["risk_assessment"]["whitelist_applied"] is False
     # metadata.version tracks API_VERSION; the two had drifted (2.0 vs 2.1)

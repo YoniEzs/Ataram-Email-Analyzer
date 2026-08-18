@@ -288,6 +288,7 @@ class EmailAnalyzerService:
         whois_data = lookups.get('whois')
         abuse_data = lookups.get('abuse')
         verification = lookups.get('verify')
+        reverse_dns = (lookups.get('rdns') or {}).get('ptr_name')
 
         # Merge VirusTotal verdicts into the attachment results
         self._apply_virustotal(lookups.get('vt') or {}, attachment_analysis)
@@ -317,7 +318,7 @@ class EmailAnalyzerService:
         )
 
         # Calculate risk score (domain age + compound rules + whitelist)
-        risk_score, risk_level, whitelist_applied = self._calculate_risk_score(
+        risk_score, risk_level, whitelist_applied, risk_factors = self._calculate_risk_score(
             auth_analysis, abuse_data, url_analysis,
             attachment_analysis, content_analysis, suspicions,
             whois_data=whois_data, sender_domain=sender_domain,
@@ -327,6 +328,15 @@ class EmailAnalyzerService:
 
         return {
             'timestamp': datetime.now(timezone.utc).isoformat(),
+            # Concise "official artifacts" summary — the key, verifiable facts
+            # extracted from the message, surfaced up front as a conclusion.
+            #
+            # Projected from `artifacts` so the two can never disagree. This
+            # deliberately reads each artifact's verbatim `value`, not its
+            # parsed form: `conclusion` reports the message as received, while
+            # `artifacts.checklist` reports it normalised (parsed address, UTC
+            # date, recipients split into To and Cc).
+            'conclusion': self._build_conclusion(artifacts),
             'headers': {
                 'sender': headers.get('sender'),
                 'recipients': headers.get('recipients'),
@@ -349,6 +359,7 @@ class EmailAnalyzerService:
             'sender_info': {
                 'domain': sender_domain,
                 'ip': sender_ip,
+                'reverse_dns': reverse_dns,
                 'whois': whois_data,
                 'abuse_report': abuse_data,
             },
@@ -366,7 +377,33 @@ class EmailAnalyzerService:
                 'level': risk_level,
                 'verdict': self._get_verdict(risk_level),
                 'whitelist_applied': whitelist_applied,
+                # Ordered breakdown of what contributed to the score, so the UI
+                # can explain the verdict instead of showing a bare number.
+                'factors': risk_factors,
             }
+        }
+
+    @staticmethod
+    def _build_conclusion(artifacts: Dict[str, Any]) -> Dict[str, Any]:
+        """Verbatim seven-field summary, projected from the artifact block.
+
+        Values are the artifacts' raw `value` fields, so this reports exactly
+        what the message said. The normalised view lives in
+        `artifacts.checklist`.
+        """
+        def value(key: str) -> Any:
+            return (artifacts.get(key) or {}).get('value')
+
+        return {
+            'sender_address': value('sender'),
+            'subject': value('subject'),
+            # BCC recipients never appear in delivered headers, so this
+            # reflects only the visible To/Cc recipients.
+            'recipients': value('recipients'),
+            'date': value('date'),
+            'sending_server_ip': (artifacts.get('sending_server') or {}).get('ip'),
+            'reverse_dns': value('reverse_dns'),
+            'reply_to': value('reply_to'),
         }
 
     def _apply_yara(
@@ -462,7 +499,9 @@ class EmailAnalyzerService:
         enrich_ip = server.get('enriched_ip') or sender_ip
         if enrich_ip:
             if self.enable_reverse_dns:
-                jobs['rdns'] = (self.dns_checker.reverse_dns, (enrich_ip,))
+                # One job serves both the conclusion hostname and the FCrDNS
+                # verdict; the two share a PTR cache entry underneath.
+                jobs['rdns'] = (self.dns_checker.reverse_dns_details, (enrich_ip,))
             if self.ip_intel:
                 jobs['ip_intel'] = (self.ip_intel.lookup, (enrich_ip,))
             if self.spf_advisor and self.spf_advisor.available:
@@ -789,28 +828,70 @@ class EmailAnalyzerService:
         *,
         artifacts: Optional[Dict[str, Any]] = None,
     ) -> tuple:
-        """Calculate overall risk score (0-100), risk level, and whitelist flag"""
+        """Calculate the risk score (0-100), level, whitelist flag, and the
+        ordered breakdown of factors that produced the score.
+
+        ``factors`` is the single source of truth behind the number: each entry
+        records the points a signal added (or removed) plus a short, human
+        readable label and detail, so the UI can explain the verdict.
+        """
         score = 0
+        factors: List[Dict[str, Any]] = []
+
+        def add_factor(label: str, points: int, severity: str, detail: str = '') -> None:
+            """Record a scoring contribution (skips no-op zero-point signals)."""
+            if points:
+                factors.append({
+                    'label': label,
+                    'points': int(points),
+                    'severity': severity,
+                    'detail': detail,
+                })
 
         # Artifact evidence, capped so header forensics can never dominate
-        # the verdict on its own. Only observed and computed flags appear
-        # in ARTIFACT_SCORE_POINTS, so nothing here is forgeable.
-        score += min(
-            ARTIFACT_SCORE_CAP,
-            sum(
-                ARTIFACT_SCORE_POINTS.get(flag.get('code', ''), 0)
-                for flag in (artifacts or {}).get('flags', [])
-            ),
-        )
+        # the verdict on its own. Only observed and computed flags appear in
+        # ARTIFACT_SCORE_POINTS, so nothing here is forgeable. Each scored
+        # flag is registered as a factor, because `factors` is what the UI
+        # shows as the reason behind the number — points added without one
+        # would leave the verdict partly unexplained.
+        artifact_budget = ARTIFACT_SCORE_CAP
+        for flag in (artifacts or {}).get('flags', []):
+            code = flag.get('code', '')
+            points = ARTIFACT_SCORE_POINTS.get(code, 0)
+            if not points or artifact_budget <= 0:
+                continue
+            points = min(points, artifact_budget)
+            artifact_budget -= points
+            score += points
+            entry = ARTIFACT_SUSPICION_MESSAGES.get(code)
+            add_factor(
+                entry[1] if entry else code,
+                points,
+                flag.get('severity', 'medium'),
+                f"{flag.get('trust', 'computed')} signal from header artifacts",
+            )
 
         # Authentication-Results header claims are deliberately not scored.
 
         # IP reputation (max 25 points)
         if abuse_data and isinstance(abuse_data.get('abuseConfidenceScore'), int):
-            score += min(25, abuse_data['abuseConfidenceScore'] // 4)
+            abuse_conf = abuse_data['abuseConfidenceScore']
+            pts = min(25, abuse_conf // 4)
+            score += pts
+            add_factor(
+                'Sender IP reputation', pts,
+                'critical' if abuse_conf >= 70 else 'medium',
+                f'AbuseIPDB confidence {abuse_conf}%',
+            )
 
         # URLs (max 20 points)
-        score += min(20, url_analysis.get('suspicious_count', 0) * 5)
+        suspicious_url_count = url_analysis.get('suspicious_count', 0)
+        url_pts = min(20, suspicious_url_count * 5)
+        score += url_pts
+        add_factor(
+            'Suspicious URLs', url_pts, 'high',
+            f'{suspicious_url_count} flagged link(s)',
+        )
 
         # Attachments (max 15 points) — weighted by severity so one critical
         # attachment (hidden executable, VT hit) outweighs mild oddities
@@ -821,27 +902,51 @@ class EmailAnalyzerService:
             if a.get('is_suspicious')
         )
         count_based = attachment_analysis.get('suspicious_count', 0) * 5
-        score += min(15, max(weighted, count_based))
+        att_pts = min(15, max(weighted, count_based))
+        score += att_pts
+        add_factor(
+            'Suspicious attachments', att_pts, 'high',
+            f"{attachment_analysis.get('suspicious_count', 0)} flagged file(s)",
+        )
 
         # Content indicators (max 10 points)
-        score += min(10, len(content_analysis.get('urgent_phrases', [])) * 2)
+        urgent_phrase_count = len(content_analysis.get('urgent_phrases', []))
+        content_pts = min(10, urgent_phrase_count * 2)
+        score += content_pts
+        add_factor(
+            'Urgent / pressure language', content_pts, 'medium',
+            f'{urgent_phrase_count} phrase(s)',
+        )
 
         # Domain age scoring
         domain_age_days = self._get_domain_age_days(whois_data)
         if domain_age_days is not None:
             if domain_age_days < 7:
-                score += 20
+                age_pts = 20
             elif domain_age_days < 30:
-                score += 15
+                age_pts = 15
             elif domain_age_days < 90:
-                score += 8
+                age_pts = 8
             elif domain_age_days < 365:
-                score += 3
+                age_pts = 3
+            else:
+                age_pts = 0
+            score += age_pts
+            add_factor(
+                'Domain age', age_pts,
+                'high' if domain_age_days < 30
+                else 'medium' if domain_age_days < 90 else 'low',
+                f'Registered {domain_age_days} day(s) ago',
+            )
 
         # Independently verified DKIM failure is cryptographic evidence.
         if verification and verification.get('available'):
             if verification.get('dkim') == 'fail':
                 score += 12
+                add_factor(
+                    'DKIM verification failed', 12, 'high',
+                    'Signature did not validate',
+                )
 
         # VirusTotal detections: confirmed malware forces critical
         vt_malicious = max(
@@ -852,9 +957,18 @@ class EmailAnalyzerService:
             default=0,
         )
         if vt_malicious >= 3:
+            before = score
             score = max(score, 85)
+            add_factor(
+                'VirusTotal detections', max(score - before, 0), 'critical',
+                f'{vt_malicious} engines flagged an attachment',
+            )
         elif vt_malicious >= 1:
             score += 15
+            add_factor(
+                'VirusTotal detections', 15, 'critical',
+                f'{vt_malicious} engine(s) flagged an attachment',
+            )
 
         # Compound escalation rules
         abuse_score = (abuse_data or {}).get('abuseConfidenceScore') or 0
@@ -864,12 +978,15 @@ class EmailAnalyzerService:
             'executable_file' in a.get('issues', [])
             for a in attachment_analysis.get('attachments', [])
         )
-        suspicious_url_count = url_analysis.get('suspicious_count', 0)
-        urgent_phrase_count = len(content_analysis.get('urgent_phrases', []))
 
         # Rule 1: new domain + executable attachment → force critical
         if domain_age_days is not None and domain_age_days < 30 and has_executable:
+            before = score
             score = max(score, 85)
+            add_factor(
+                'Newly registered domain + executable attachment',
+                max(score - before, 0), 'critical', 'Escalated to critical',
+            )
             suspicions.append({
                 'category': 'compound_escalation',
                 'severity': 'critical',
@@ -878,11 +995,20 @@ class EmailAnalyzerService:
 
         # Rule 2: young domain + high abuse score → force high
         if domain_age_days is not None and domain_age_days < 90 and abuse_score > 50:
+            before = score
             score = max(score, 75)
+            add_factor(
+                'Young domain + high-abuse sender IP',
+                max(score - before, 0), 'high', 'Escalated to high',
+            )
 
         # Rule 3: Many suspicious URLs + urgent content
         if suspicious_url_count >= 3 and urgent_phrase_count > 2:
             score += 10
+            add_factor(
+                'Many suspicious URLs combined with urgent content',
+                10, 'high', '',
+            )
 
         # Apply a whitelist discount only when cryptographically valid DKIM is
         # aligned with the visible From domain.
@@ -898,7 +1024,12 @@ class EmailAnalyzerService:
         # Trust is only a weak positive signal. It must never hide a high or
         # critical score because trusted domains and accounts can be compromised.
         if whitelist_applied and score < 50:
+            before = score
             score = max(0, score - 5)
+            add_factor(
+                'Trusted domain with verified DKIM',
+                score - before, 'info', 'Small trust discount applied',
+            )
 
         # Final cap
         score = min(100, score)
@@ -913,7 +1044,7 @@ class EmailAnalyzerService:
         else:
             risk_level = 'low'
 
-        return score, risk_level, whitelist_applied
+        return score, risk_level, whitelist_applied, factors
 
     def _get_verdict(self, risk_level: str) -> str:
         """Get human-readable verdict"""

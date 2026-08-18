@@ -179,7 +179,8 @@ def test_ptr_helo_mismatch_is_reported_but_not_scored():
         'fcrdns': 'pass', 'source': 'live_dns', 'checked_at': 'now',
     }
     with patch(
-        'app.services.dns_checker.DNSCheckerService.reverse_dns', return_value=rdns
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details',
+        return_value=rdns
     ):
         result = analyze(enable_reverse_dns=True)
 
@@ -201,7 +202,8 @@ def test_fcrdns_failure_is_observed_evidence_and_raises_the_score():
         'fcrdns': 'fail', 'source': 'live_dns', 'checked_at': 'now',
     }
     with patch(
-        'app.services.dns_checker.DNSCheckerService.reverse_dns', return_value=rdns
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details',
+        return_value=rdns
     ):
         result = analyze(enable_reverse_dns=True)
 
@@ -217,7 +219,8 @@ def test_reverse_dns_populates_the_checklist():
         'fcrdns': 'pass', 'source': 'live_dns', 'checked_at': 'now',
     }
     with patch(
-        'app.services.dns_checker.DNSCheckerService.reverse_dns', return_value=rdns
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details',
+        return_value=rdns
     ):
         artifacts = analyze(enable_reverse_dns=True)['artifacts']
     assert artifacts['checklist']['reverse_dns'] == 'mail.sender.com'
@@ -226,7 +229,8 @@ def test_reverse_dns_populates_the_checklist():
 
 def test_failed_lookups_are_reported_as_errors_not_silence():
     with patch(
-        'app.services.dns_checker.DNSCheckerService.reverse_dns', return_value=None
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details',
+        return_value=None
     ):
         artifacts = analyze(enable_reverse_dns=True)['artifacts']
     assert artifacts['enrichment_status']['reverse_dns'] == 'error'
@@ -240,8 +244,90 @@ def test_message_without_public_ip_skips_lookups_explicitly():
         b'Subject: x\r\nDate: Mon, 06 Jul 2026 09:00:00 +0000\r\n\r\nbody\r\n'
     )
     with patch(
-        'app.services.dns_checker.DNSCheckerService.reverse_dns'
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details'
     ) as mock_rdns:
         artifacts = analyze(raw, enable_reverse_dns=True)['artifacts']
     mock_rdns.assert_not_called()
     assert artifacts['enrichment_status']['reverse_dns'] == 'skipped_no_public_ip'
+
+
+def test_conclusion_and_checklist_never_disagree():
+    """conclusion is a projection of artifacts; the two must stay in lockstep."""
+    result = analyze()
+    conclusion = result['conclusion']
+    checklist = result['artifacts']['checklist']
+
+    # Same seven fields. IP, reverse DNS and subject coincide; sender and
+    # recipients intentionally differ (full header vs parsed), covered below.
+    assert conclusion['sending_server_ip'] == checklist['sending_server_ip']
+    assert conclusion['reverse_dns'] == checklist['reverse_dns']
+    assert conclusion['subject'] == checklist['subject']
+    # The sender header carries a display name, so the projection keeps the
+    # whole header while the checklist parses out just the address.
+    assert conclusion['sender_address'] == 'Sender <sender@sender.com>'
+    assert checklist['sender_address'] == 'sender@sender.com'
+
+
+def test_conclusion_reports_verbatim_while_checklist_normalises():
+    """conclusion keeps the raw header; checklist parses it.
+
+    A display-name sender and a +03:00 date are where the two intentionally
+    differ: conclusion shows what arrived, checklist shows the parsed form.
+    """
+    raw = (
+        b'Received: from mail.sender.com (mail [93.184.216.34])'
+        b' by mx.company.example; Mon, 06 Jul 2026 09:00:00 +0000\r\n'
+        b'From: "Sender Team" <sender@sender.com>\r\n'
+        b'To: victim@company.example\r\n'
+        b'Subject: Quarterly report\r\n'
+        b'Date: Mon, 06 Jul 2026 12:00:00 +0300\r\n\r\nbody\r\n'
+    )
+    result = analyze(raw)
+    conclusion = result['conclusion']
+    checklist = result['artifacts']['checklist']
+
+    # As-received From header (RFC2047-decoded), including the display name.
+    assert conclusion['sender_address'] == 'Sender Team <sender@sender.com>'
+    # Parsed address only.
+    assert checklist['sender_address'] == 'sender@sender.com'
+    # Verbatim Date string vs normalised UTC.
+    assert conclusion['date'] == 'Mon, 06 Jul 2026 12:00:00 +0300'
+    assert checklist['date_utc'] == '2026-07-06T09:00:00+00:00'
+
+
+def test_scored_artifact_flags_appear_in_risk_factors():
+    """A scored flag must show up in the factor breakdown behind the number."""
+    rdns = {
+        'ip': PUBLIC_IP, 'ptr': ['mail.sender.com'], 'ptr_name': 'mail.sender.com',
+        'forward_ips': {'mail.sender.com': ['198.18.0.1']},
+        'fcrdns': 'fail', 'source': 'live_dns', 'checked_at': 'now',
+    }
+    with patch(
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details',
+        return_value=rdns,
+    ):
+        result = analyze(enable_reverse_dns=True)
+
+    factors = result['risk_assessment']['factors']
+    labels = ' '.join(f.get('label', '') for f in factors)
+    # fcrdns_fail is worth 5 points; it must be both scored and explained.
+    assert any(f.get('points') for f in factors)
+    assert 'FCrDNS' in labels or 'forward-confirm' in labels.lower()
+
+
+def test_unscored_flags_do_not_appear_as_factors():
+    """ptr_helo_mismatch is reported but scores zero, so it is not a factor."""
+    rdns = {
+        'ip': PUBLIC_IP, 'ptr': ['unrelated.example.net'],
+        'ptr_name': 'unrelated.example.net', 'forward_ips': {},
+        'fcrdns': 'pass', 'source': 'live_dns', 'checked_at': 'now',
+    }
+    with patch(
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details',
+        return_value=rdns,
+    ):
+        result = analyze(enable_reverse_dns=True)
+
+    factors = result['risk_assessment']['factors']
+    labels = ' '.join(f.get('label', '') for f in factors).lower()
+    assert 'helo' not in labels

@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import dns.resolver
+    import dns.reversename
     import dns.exception
     import dns.reversename
     DNS_AVAILABLE = True
@@ -126,17 +127,23 @@ class DNSCheckerService:
             return None
         return self._resolve(domain, 'MX', f"dns:mx:{domain}")
 
-    def reverse_dns(self, ip: str) -> Optional[Dict[str, Any]]:
+    def reverse_dns_details(self, ip: str) -> Optional[Dict[str, Any]]:
         """Reverse DNS plus forward confirmation (FCrDNS) for a sending IP.
 
         FCrDNS passes when the PTR name resolves forward to the same address.
         Unlike anything read out of the message, this is a live fact about the
         address, so it is classified as observed evidence and may be scored.
+
+        ``fcrdns`` is one of ``pass``, ``fail`` or ``no_ptr``. A resolver
+        failure is reported as ``no_ptr`` rather than distinctly, because the
+        shared PTR cache stores one negative sentinel for both. That is the
+        safe direction: ``no_ptr`` scores nothing, so an outage cannot inflate
+        a risk score the way a spurious ``fail`` would.
         """
         if not validate_public_ip(ip):
             return None
 
-        cache_key = f"rdns:{ip}"
+        cache_key = f"rdns:details:{ip}"
         cached = cache_get(cache_key)
         if cached is not None:
             return cached
@@ -151,38 +158,33 @@ class DNSCheckerService:
             'checked_at': datetime.now(timezone.utc).isoformat(),
         }
 
-        ptr_names = self.get_ptr_records(ip)
-        if ptr_names is None:
-            result['fcrdns'] = 'lookup_failed'
-            cache_set(cache_key, result, 300)
-            return result
-        if not ptr_names:
+        # Reuse the cheap PTR lookup so an IP is resolved once and both
+        # methods share the same `ptr:` cache entry, including its negative
+        # sentinel. Forward confirmation is conventionally about *the* PTR
+        # name, so only the primary name is confirmed.
+        ptr_name = self.reverse_dns(ip)
+        if not ptr_name:
             cache_set(cache_key, result, 3600)
             return result
 
-        result['ptr'] = ptr_names
-        result['ptr_name'] = ptr_names[0]
+        result['ptr'] = [ptr_name]
+        result['ptr_name'] = ptr_name
 
         try:
             target = ipaddress.ip_address(ip)
         except ValueError:
             return result
 
+        forward = self.get_host_ips(ptr_name) or []
+        result['forward_ips'][ptr_name] = forward
         confirmed = False
-        # Two names is enough: each costs up to two further round-trips, and
-        # the whole batch shares the analyzer's global lookup deadline.
-        for name in ptr_names[:2]:
-            forward = self.get_host_ips(name) or []
-            result['forward_ips'][name] = forward
-            for address in forward:
-                try:
-                    if ipaddress.ip_address(address) == target:
-                        confirmed = True
-                        break
-                except ValueError:
-                    continue
-            if confirmed:
-                break
+        for address in forward:
+            try:
+                if ipaddress.ip_address(address) == target:
+                    confirmed = True
+                    break
+            except ValueError:
+                continue
 
         result['fcrdns'] = 'pass' if confirmed else 'fail'
         cache_set(cache_key, result, 3600)
@@ -240,3 +242,46 @@ class DNSCheckerService:
             if re.search(r'(?:^|;)\s*p=', record):
                 return record
         return None
+
+    def reverse_dns(self, ip: str) -> Optional[str]:
+        """Resolve the PTR (reverse DNS) hostname for an IP address.
+
+        Returns the first PTR hostname (without the trailing dot) or None
+        when the address has no PTR record or the lookup fails. Results are
+        cached, including "no record", so repeat lookups don't re-query DNS.
+
+        This stays a single PTR query. Forward confirmation lives in
+        :meth:`reverse_dns_details`, which builds on this and costs more, so
+        callers that only need the hostname do not pay for it.
+
+        Non-public addresses are rejected before any query, so an internal
+        Received chain cannot disclose RFC1918 space to the resolver.
+        """
+        if not ip or not validate_public_ip(ip):
+            return None
+
+        cache_key = f"ptr:{ip}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            # "" is the cached sentinel for a confirmed "no PTR record".
+            return cached or None
+
+        try:
+            rev_name = dns.reversename.from_address(ip)
+            answers = dns.resolver.resolve(rev_name, 'PTR', lifetime=self.timeout)
+            # Only PTR rdata carries a target; guard so a non-PTR answer in
+            # the set can't raise (the generic Rdata type has no .target).
+            hostnames = []
+            for rdata in answers:
+                target = getattr(rdata, 'target', None)
+                if target is not None:
+                    hostnames.append(str(target).rstrip('.'))
+            result = hostnames[0] if hostnames else None
+            cache_set(cache_key, result or "", 3600)
+            return result
+        except dns.exception.DNSException:
+            cache_set(cache_key, "", 3600)
+            return None
+        except Exception as e:
+            logger.warning(f"[DNSCheckerService] Reverse DNS error for {ip}: {e}")
+            return None

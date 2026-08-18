@@ -9,14 +9,27 @@
 const I18N_TRANSLATIONS = {
     he: {
         // Artifacts card
+        'Display Name': 'שם תצוגה',
+        'Sender Domain': 'דומיין השולח',
+        'Subject Charsets': 'מערכות תווים בנושא',
+        'To': 'אל',
+        'Cc': 'עותק',
+        'Delivered via BCC': 'נמסר בעותק מוסתר',
+        'Date (UTC)': 'תאריך (UTC)',
+        'Skew vs First Hop': 'הפרש מול התחנה הראשונה',
+        'HELO Claimed': 'HELO שהוצהר',
+        // Enrichment status vocabulary
+        'reverse_dns': 'DNS הפוך',
+        'ip_intel': 'מודיעין IP',
+        'spf_advisory': 'SPF מייעץ',
+        'mx': 'רשומות MX',
+        'ok': 'תקין',
+        'disabled': 'מושבת',
+        'unavailable': 'לא זמין',
+        'error': 'שגיאה',
+        'skipped_no_public_ip': 'דולג - אין IP ציבורי',
+        'pending': 'ממתין',
         'Artifacts': 'ארטיפקטים',
-        'Sender Address': 'כתובת השולח',
-        'Subject Line': 'שורת הנושא',
-        'Recipients': 'נמענים',
-        'Date + Time': 'תאריך ושעה',
-        'Sending Server IP': 'כתובת IP של שרת השליחה',
-        'Reverse DNS': 'DNS הפוך',
-        'Reply-To': 'כתובת למענה',
         'Forward-Confirmed rDNS': 'אימות DNS הפוך דו-כיווני',
         'HELO vs Reverse DNS': 'HELO מול DNS הפוך',
         'ASN': 'מספר מערכת אוטונומית',
@@ -42,12 +55,10 @@ const I18N_TRANSLATIONS = {
         'via BCC': 'בעותק מוסתר',
         'undisclosed': 'לא נחשפו',
         'Copy Artifacts': 'העתקת ארטיפקטים',
-        'Copied': 'הועתק',
         'Copy the artifact block below': 'העתיקו את בלוק הארטיפקטים שלהלן',
         'Field': 'שדה',
         'Value': 'ערך',
         'Flags': 'סימונים',
-        'Risk': 'סיכון',
         'Header claims (forgeable, read from the uploaded file)':
             'טענות מהכותרות (ניתנות לזיוף, נקראו מהקובץ שהועלה)',
         'Observed (checked live at analysis time)': 'נצפה (נבדק בזמן אמת בעת הניתוח)',
@@ -155,6 +166,45 @@ const I18N_TRANSLATIONS = {
         'Risk Score': 'ציון סיכון',
         'Comprehensive threat assessment': 'הערכת איום מקיפה',
         'Email is processed by the configured analysis server. See PRIVACY.md before uploading sensitive material.': 'המייל מעובד בשרת הניתוח המוגדר. קראו את PRIVACY.md לפני העלאת חומר רגיש.',
+
+        // Upload / layout
+        'Advanced options': 'אפשרויות מתקדמות',
+        'Analyze another email': 'ניתוח מייל נוסף',
+        'Switch to dark theme': 'מעבר למצב כהה',
+        'Switch to light theme': 'מעבר למצב בהיר',
+
+        // Results — summary + score breakdown
+        'Why this score': 'מדוע הציון הזה',
+        'No scoring factors — no strong signals detected': 'אין גורמי ניקוד — לא זוהו סימנים חזקים',
+        'Findings': 'ממצאים',
+        'Hops': 'תחנות',
+        'Overview': 'סקירה',
+        'Details': 'פרטים',
+        'pts': 'נק׳',
+
+        // Results — tabs
+        'Sender & IP': 'שולח ו-IP',
+        'Routing': 'ניתוב',
+        'Headers': 'כותרות',
+        'Nothing to show here': 'אין מה להציג כאן',
+
+        // Pivot actions
+        'Copy': 'העתקה',
+        'Copied': 'הועתק',
+        'Look up': 'בדיקה',
+        'Search': 'חיפוש',
+        'Reverse DNS': 'DNS הפוך',
+
+        // Results — conclusion (official artifacts)
+        'Conclusion': 'סיכום',
+        'Official artifacts extracted from this email': 'ממצאים רשמיים שחולצו מהמייל',
+        'Sender Address': 'כתובת השולח',
+        'Subject Line': 'שורת הנושא',
+        'Recipients': 'נמענים',
+        'Date + Time': 'תאריך ושעה',
+        'Sending Server IP': 'כתובת ה-IP של שרת השליחה',
+        'Reverse DNS of Sending Server': 'DNS הפוך של שרת השליחה',
+        'Reply-To Address': 'כתובת השב־אל',
 
         // Results — cards and rows
         'Email Headers': 'כותרות המייל',
@@ -266,6 +316,9 @@ function applyI18n() {
     // Re-render dynamic sections in the new language
     if (window.uiController && typeof window.uiController.renderHistory === 'function') {
         window.uiController.renderHistory();
+    }
+    if (window.uiController && typeof window.uiController._applyThemeLabel === 'function') {
+        window.uiController._applyThemeLabel();
     }
     if (window.resultsRenderer && window.lastAnalysisResult) {
         window.resultsRenderer.render(window.lastAnalysisResult);

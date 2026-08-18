@@ -8,6 +8,18 @@
     <meta name="author" content="Ataram Security">
     <title>Ataram Email Analyzer - Email Security Analysis</title>
 
+    <!-- Apply the saved theme before first paint to avoid a flash -->
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('emailAnalyzer_theme');
+                if (t === 'light' || t === 'dark') {
+                    document.documentElement.setAttribute('data-theme', t);
+                }
+            } catch (e) { /* localStorage unavailable */ }
+        })();
+    </script>
+
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 
@@ -18,23 +30,30 @@
     <!-- Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Header -->
-    <header class="header">
-        <div class="container">
-            <div class="header-content">
-                <div class="logo">
-                    <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+    <!-- Top bar -->
+    <header class="topbar">
+        <div class="container topbar-inner">
+            <div class="brand">
+                <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+                <span class="brand-name">Ataram Email Analyzer</span>
+            </div>
+            <div class="topbar-actions">
+                <span class="tagline" data-i18n="Advanced Email Security Analysis">Advanced Email Security Analysis</span>
+                <button id="themeToggle" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle theme">
+                    <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4"/>
+                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
                     </svg>
-                    <h1>Ataram Email Analyzer</h1>
-                </div>
-                <div class="header-actions">
-                    <p class="tagline" data-i18n="Advanced Email Security Analysis">Advanced Email Security Analysis</p>
-                    <button id="langToggle" class="btn btn-secondary lang-toggle" type="button">עברית</button>
-                </div>
+                    <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+                    </svg>
+                </button>
+                <button id="langToggle" class="btn btn-secondary lang-toggle" type="button">עברית</button>
             </div>
         </div>
     </header>
@@ -63,54 +82,57 @@
                     </div>
                 </div>
 
-                <!-- Optional API Key -->
-                <div class="api-key-section">
-                    <label for="apiKeyInput" class="api-key-label">
-                        <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                            <path d="M7 11V7a5 5 0 0110 0v4"/>
-                        </svg>
-                        <span data-i18n="AbuseIPDB API Key (optional)">AbuseIPDB API Key (optional)</span>
-                    </label>
-                    <input
-                        type="password"
-                        id="apiKeyInput"
-                        class="api-key-input"
-                        autocomplete="off"
-                        autocapitalize="none"
-                        spellcheck="false"
-                        placeholder="Enter your AbuseIPDB API key for IP reputation checks"
-                        data-i18n-placeholder="Enter your AbuseIPDB API key for IP reputation checks"
-                    >
-                    <small class="api-key-help">
-                        <span data-i18n="Get your free API key at">Get your free API key at</span> <a href="https://www.abuseipdb.com/api" target="_blank" rel="noopener">abuseipdb.com/api</a>
-                    </small>
-                    <small class="api-key-help" data-i18n="The API key is sent to the configured analysis server and then to AbuseIPDB. It is cleared from this field after each request.">The API key is sent to the configured analysis server and then to AbuseIPDB. It is cleared from this field after each request.</small>
-                    <small class="api-key-help"><span data-i18n="Analysis server">Analysis server</span>: <code id="apiDestination"></code></small>
-                </div>
+                <!-- Optional API Key (collapsed by default) -->
+                <details class="advanced">
+                    <summary data-i18n="Advanced options">Advanced options</summary>
+                    <div class="api-key-section">
+                        <label for="apiKeyInput" class="api-key-label">
+                            <svg class="icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                                <path d="M7 11V7a5 5 0 0110 0v4"/>
+                            </svg>
+                            <span data-i18n="AbuseIPDB API Key (optional)">AbuseIPDB API Key (optional)</span>
+                        </label>
+                        <input
+                            type="password"
+                            id="apiKeyInput"
+                            class="api-key-input"
+                            autocomplete="off"
+                            autocapitalize="none"
+                            spellcheck="false"
+                            placeholder="Enter your AbuseIPDB API key for IP reputation checks"
+                            data-i18n-placeholder="Enter your AbuseIPDB API key for IP reputation checks"
+                        >
+                        <small class="api-key-help">
+                            <span data-i18n="Get your free API key at">Get your free API key at</span> <a href="https://www.abuseipdb.com/api" target="_blank" rel="noopener">abuseipdb.com/api</a>
+                        </small>
+                        <small class="api-key-help" data-i18n="The API key is sent to the configured analysis server and then to AbuseIPDB. It is cleared from this field after each request.">The API key is sent to the configured analysis server and then to AbuseIPDB. It is cleared from this field after each request.</small>
+                        <small class="api-key-help"><span data-i18n="Analysis server">Analysis server</span>: <code id="apiDestination"></code></small>
+                    </div>
+                </details>
 
                 <!-- Progress Bar -->
                 <div id="progressBar" class="progress-bar" style="display: none;">
                     <div class="progress-bar-fill"></div>
                     <p class="progress-text" data-i18n="Analyzing email...">Analyzing email...</p>
-                    <p id="progressStep" style="text-align:center; font-size:0.8rem; color:var(--text-muted); margin-top:0.3rem;"></p>
+                    <p id="progressStep" class="progress-step"></p>
                 </div>
             </section>
 
             <!-- Recent Analysis History -->
-            <section id="historySection" class="card" style="margin-bottom:1.5rem; display:none;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                    <h3 style="margin:0;" data-i18n="Recent Analyses">Recent Analyses</h3>
-                    <button id="clearHistoryBtn" class="btn btn-secondary" style="font-size:0.8rem; padding:0.4rem 0.8rem;" data-i18n="Clear">Clear</button>
+            <section id="historySection" class="card history-card" style="display:none;">
+                <div class="history-head">
+                    <h3 data-i18n="Recent Analyses">Recent Analyses</h3>
+                    <button id="clearHistoryBtn" class="btn btn-secondary btn-sm" data-i18n="Clear">Clear</button>
                 </div>
-                <p id="historyDisclosure" style="margin:0 0 1rem; font-size:0.8rem; color:var(--text-muted);" data-i18n="History is saved only in this browser's local storage and includes filename, risk score, and verdict summary. Use Clear to remove it.">History is saved only in this browser's local storage and includes filename, risk score, and verdict summary. Use Clear to remove it.</p>
+                <p id="historyDisclosure" class="history-disclosure" data-i18n="History is saved only in this browser's local storage and includes filename, risk score, and verdict summary. Use Clear to remove it.">History is saved only in this browser's local storage and includes filename, risk score, and verdict summary. Use Clear to remove it.</p>
                 <div id="historyList">
-                    <p style="text-align:center; color:var(--text-muted);" data-i18n="No previous analyses.">No previous analyses.</p>
+                    <p class="history-empty" data-i18n="No previous analyses.">No previous analyses.</p>
                 </div>
             </section>
 
             <!-- Export Bar -->
-            <div id="exportBar" style="display:none; text-align:right; margin-bottom:1rem;">
+            <div id="exportBar" class="export-bar" style="display:none;">
                 <button id="copyArtifactsBtn" class="btn btn-secondary" data-i18n="Copy Artifacts">Copy Artifacts</button>
                 <button id="downloadReportBtn" class="btn btn-secondary" data-i18n="Download Report (JSON)">Download Report (JSON)</button>
                 <button id="printReportBtn" class="btn btn-secondary" data-i18n="Print Report">Print Report</button>

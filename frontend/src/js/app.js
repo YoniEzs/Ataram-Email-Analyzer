@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.uiController.initCopyArtifactsButton();
     window.uiController.initDownloadButton();
     window.uiController.initPrintButton();
+    window.uiController.initThemeToggle();
     window.uiController.initHistory();
 
     if (window.uiController.elements.apiDestination) {

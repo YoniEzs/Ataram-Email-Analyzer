@@ -49,7 +49,7 @@ def test_forward_confirmed_reverse_dns_passes():
         ('mail.sender.example', 'A'): [PUBLIC_IP],
     }
     with patch('app.services.dns_checker.dns.resolver.resolve', fake_resolver(mapping)):
-        result = DNSCheckerService(timeout=1).reverse_dns(PUBLIC_IP)
+        result = DNSCheckerService(timeout=1).reverse_dns_details(PUBLIC_IP)
     assert result['ptr_name'] == 'mail.sender.example'
     assert result['fcrdns'] == 'pass'
     assert result['forward_ips']['mail.sender.example'] == [PUBLIC_IP]
@@ -61,16 +61,21 @@ def test_fcrdns_fails_when_forward_lookup_points_elsewhere():
         ('mail.sender.example', 'A'): [OTHER_IP],
     }
     with patch('app.services.dns_checker.dns.resolver.resolve', fake_resolver(mapping)):
-        result = DNSCheckerService(timeout=1).reverse_dns(PUBLIC_IP)
+        result = DNSCheckerService(timeout=1).reverse_dns_details(PUBLIC_IP)
     assert result['fcrdns'] == 'fail'
 
 
-def test_no_ptr_record_is_reported_distinctly_from_failure():
+def test_absent_ptr_yields_no_ptr_and_scores_nothing():
+    """A resolver failure is reported as no_ptr, not as an FCrDNS failure.
+
+    The shared PTR cache keeps one negative sentinel for both cases, so the
+    two are indistinguishable here. That is the safe direction: no_ptr is
+    worth zero points, whereas a spurious fail would inflate the score during
+    a resolver outage.
+    """
     with patch('app.services.dns_checker.dns.resolver.resolve', fake_resolver({})):
-        result = DNSCheckerService(timeout=1).reverse_dns(PUBLIC_IP)
-    # An absent PTR and an unreachable resolver must not look the same: only
-    # the first is evidence about the sender.
-    assert result['fcrdns'] == 'lookup_failed'
+        result = DNSCheckerService(timeout=1).reverse_dns_details(PUBLIC_IP)
+    assert result['fcrdns'] == 'no_ptr'
     assert result['ptr_name'] is None
 
 
@@ -86,7 +91,7 @@ def test_ipv6_reverse_lookup_uses_nibble_form():
         raise dns.exception.DNSException('no answer')
 
     with patch('app.services.dns_checker.dns.resolver.resolve', _resolve):
-        result = DNSCheckerService(timeout=1).reverse_dns(PUBLIC_IPV6)
+        result = DNSCheckerService(timeout=1).reverse_dns_details(PUBLIC_IPV6)
     assert seen['PTR'].endswith('.ip6.arpa.')
     assert result['fcrdns'] == 'pass'
 
@@ -95,7 +100,7 @@ def test_ipv6_reverse_lookup_uses_nibble_form():
 def test_non_public_addresses_are_never_queried(ip):
     """An internal Received chain must not leak RFC1918 space to a resolver."""
     with patch('app.services.dns_checker.dns.resolver.resolve') as mock_resolve:
-        assert DNSCheckerService(timeout=1).reverse_dns(ip) is None
+        assert DNSCheckerService(timeout=1).reverse_dns_details(ip) is None
         assert DNSCheckerService(timeout=1).get_ptr_records(ip) is None
     mock_resolve.assert_not_called()
 
@@ -113,14 +118,15 @@ def test_repeat_lookup_is_served_from_cache():
 
     service = DNSCheckerService(timeout=1)
     with patch('app.services.dns_checker.dns.resolver.resolve', _counting):
-        first = service.reverse_dns(PUBLIC_IP)
+        first = service.reverse_dns_details(PUBLIC_IP)
         before = len(calls)
-        second = service.reverse_dns(PUBLIC_IP)
+        second = service.reverse_dns_details(PUBLIC_IP)
     assert first == second
     assert len(calls) == before
 
 
-def test_forward_confirmation_is_bounded_to_two_ptr_names():
+def test_forward_confirmation_only_checks_the_primary_ptr_name():
+    """FCrDNS is conventionally about *the* PTR name, and this bounds cost."""
     mapping = {
         ('34.216.184.93.in-addr.arpa', 'PTR'): [
             'a.example.', 'b.example.', 'c.example.', 'd.example.',
@@ -134,8 +140,8 @@ def test_forward_confirmation_is_bounded_to_two_ptr_names():
         return fake_resolver(mapping)(name, rdtype, lifetime)
 
     with patch('app.services.dns_checker.dns.resolver.resolve', _resolve):
-        DNSCheckerService(timeout=1).reverse_dns(PUBLIC_IP)
-    assert len({n for n in looked_up}) <= 2
+        DNSCheckerService(timeout=1).reverse_dns_details(PUBLIC_IP)
+    assert {n for n in looked_up} == {'a.example'}
 
 
 def test_mx_records_are_returned_as_hostnames():
