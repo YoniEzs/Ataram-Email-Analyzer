@@ -123,7 +123,13 @@ class DNSCheckerService:
         try:
             rev_name = dns.reversename.from_address(ip)
             answers = dns.resolver.resolve(rev_name, 'PTR', lifetime=self.timeout)
-            hostnames = [str(rdata.target).rstrip('.') for rdata in answers]
+            # Only PTR rdata carries a target; guard so a non-PTR answer in
+            # the set can't raise (the generic Rdata type has no .target).
+            hostnames = []
+            for rdata in answers:
+                target = getattr(rdata, 'target', None)
+                if target is not None:
+                    hostnames.append(str(target).rstrip('.'))
             result = hostnames[0] if hostnames else None
             cache_set(cache_key, result or "", 3600)
             return result
