@@ -16,6 +16,7 @@ class UIController {
             errorMessage: document.getElementById('errorMessage'),
             retryButton: document.getElementById('retryButton'),
             exportBar: document.getElementById('exportBar'),
+            copyArtifactsBtn: document.getElementById('copyArtifactsBtn'),
             downloadReportBtn: document.getElementById('downloadReportBtn'),
             printReportBtn: document.getElementById('printReportBtn'),
             historySection: document.getElementById('historySection'),
@@ -282,6 +283,67 @@ class UIController {
                 this.analyzeFile(this.currentFile);
             }
         });
+    }
+
+    /**
+     * Copy the artifact block as text for pasting into a ticket.
+     */
+    initCopyArtifactsButton() {
+        if (!this.elements.copyArtifactsBtn) return;
+
+        this.elements.copyArtifactsBtn.addEventListener('click', async () => {
+            const result = window.lastAnalysisResult;
+            if (!result || !window.resultsRenderer) return;
+
+            const text = window.resultsRenderer.buildArtifactText(result);
+            if (!text) return;
+
+            let copied = false;
+            // navigator.clipboard needs a secure context. The Compose stack
+            // serves plain HTTP on :3000, so the fallback is load-bearing.
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    copied = true;
+                } catch (e) {
+                    copied = false;
+                }
+            }
+            if (!copied) {
+                copied = this.copyViaTextarea(text);
+            }
+            if (!copied) {
+                window.prompt(t('Copy the artifact block below'), text);
+                return;
+            }
+            this.flashButtonLabel(this.elements.copyArtifactsBtn, t('Copied'));
+        });
+    }
+
+    /**
+     * Clipboard fallback for non-secure contexts.
+     */
+    copyViaTextarea(text) {
+        try {
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.left = '-9999px';
+            document.body.appendChild(area);
+            area.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(area);
+            return ok;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    flashButtonLabel(button, message) {
+        const original = button.textContent;
+        button.textContent = message;
+        setTimeout(() => { button.textContent = original; }, 1500);
     }
 
     /**

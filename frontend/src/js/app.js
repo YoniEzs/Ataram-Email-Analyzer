@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize UI controller
     window.uiController.initDragAndDrop();
     window.uiController.initRetryButton();
+    window.uiController.initCopyArtifactsButton();
     window.uiController.initDownloadButton();
     window.uiController.initPrintButton();
     window.uiController.initHistory();
