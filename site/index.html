@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ataram Email Analyzer</title>
+<meta name="description" content="Local phishing triage: analyze .eml and .msg files in your browser, on your own machine. Free and open source.">
+<style>
+  :root {
+    --bg: #0d1421; --bg-card: #16202f; --border: #253247;
+    --text: #e6edf6; --muted: #8b98ab; --accent: #4c9aff; --ok: #3fb27f;
+    --warn: #e0a63d; --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 0 1.25rem 4rem;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  header { padding: 4rem 0 2.5rem; text-align: center; }
+  h1 { font-size: 2.4rem; letter-spacing: -0.02em; }
+  .tagline { color: var(--muted); font-size: 1.15rem; margin-top: 0.6rem; }
+  .banner {
+    display: inline-block; margin-top: 1.2rem; padding: 0.3rem 0.9rem;
+    border: 1px solid var(--warn); color: var(--warn);
+    border-radius: 999px; font-size: 0.85rem;
+  }
+  .privacy {
+    margin: 2rem auto 0; max-width: 620px; color: var(--muted);
+    font-size: 0.95rem; border-left: 3px solid var(--ok); padding-left: 1rem;
+    text-align: left;
+  }
+  h2 { font-size: 1.35rem; margin: 3rem 0 1rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 1.1rem 1.25rem;
+  }
+  .card h3 { font-size: 1rem; margin-bottom: 0.4rem; }
+  .card p { color: var(--muted); font-size: 0.92rem; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
+  .tab {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    padding: 0.45rem 1rem; border-radius: 999px; cursor: pointer; font: inherit;
+    font-size: 0.92rem;
+  }
+  .tab.active { border-color: var(--accent); color: var(--accent); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  pre {
+    background: #0a0f18; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1rem 1.25rem; overflow-x: auto; font-size: 0.9rem; line-height: 1.7;
+  }
+  code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .panel p { color: var(--muted); font-size: 0.92rem; margin: 0.75rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .btn {
+    display: inline-block; background: var(--accent); color: #06101f;
+    font-weight: 600; padding: 0.65rem 1.5rem; border-radius: var(--radius);
+    margin-top: 1.4rem;
+  }
+  .btn:hover { text-decoration: none; filter: brightness(1.1); }
+  footer { margin-top: 4rem; color: var(--muted); font-size: 0.88rem; text-align: center; }
+  footer a { color: var(--muted); text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Ataram Email Analyzer</h1>
+    <p class="tagline">Phishing triage that runs on <em>your</em> machine.<br>
+      Drop an <code>.eml</code> or <code>.msg</code> file, get the analyst checklist in seconds.</p>
+    <span class="banner">Experimental v0.1.0-rc1 &mdash; feedback welcome</span>
+    <p class="privacy">
+      Your email never leaves your computer. Analysis is local; the only optional
+      network traffic is DNS/RDAP lookups of header-derived IPs and domains, and
+      every one of them can be switched off for fully offline work.
+    </p>
+    <a class="btn" href="https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest">Download</a>
+  </header>
+
+  <h2>What it gives you</h2>
+  <div class="grid">
+    <div class="card"><h3>The triage checklist, extracted</h3>
+      <p>Sender, subject, recipients, timestamps, sending server IP, reverse DNS and
+      Reply-To — pulled out as structured artifacts with a copy-for-ticket export.</p></div>
+    <div class="card"><h3>An honest trust model</h3>
+      <p>Every value is labelled: read from the (forgeable) file, computed from it, or
+      verified against live DNS. Nothing an attacker can fake affects the risk score.</p></div>
+    <div class="card"><h3>Free enrichment, no API keys</h3>
+      <p>Forward-confirmed reverse DNS, ASN and BGP prefix via Team Cymru, registry and
+      abuse contact via RDAP. AbuseIPDB and VirusTotal plug in if you bring keys.</p></div>
+    <div class="card"><h3>Attachment &amp; URL checks</h3>
+      <p>Magic bytes, double extensions, archive inspection without extraction, YARA
+      rules, homograph domains, and displayed-link mismatches.</p></div>
+  </div>
+
+  <h2>Install</h2>
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-panel="win">Windows</button>
+    <button class="tab" data-panel="mac">macOS</button>
+    <button class="tab" data-panel="linux">Linux</button>
+    <button class="tab" data-panel="docker">Docker</button>
+    <button class="tab" data-panel="pipx">pipx</button>
+  </div>
+
+  <div class="panel active" id="win">
+    <pre><code>1. Download AtaramEmailAnalyzer-…-windows-x64.zip from the Releases page
+2. Extract anywhere and run AtaramEmailAnalyzer.exe
+3. Your browser opens at http://127.0.0.1:8321 — drop an .eml file in</code></pre>
+    <p>The binaries are unsigned, so SmartScreen will warn on first run: choose
+    <strong>More info &rarr; Run anyway</strong>. Verify your download against
+    <code>SHA256SUMS.txt</code> on the release page — the build is reproducible
+    from the open source.</p>
+  </div>
+  <div class="panel" id="mac">
+    <pre><code>curl -LO https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest/download/AtaramEmailAnalyzer-macos-arm64.zip
+unzip AtaramEmailAnalyzer-macos-arm64.zip
+./AtaramEmailAnalyzer/AtaramEmailAnalyzer</code></pre>
+    <p>Unsigned build: on first run, right-click the binary and choose Open, or allow
+    it under System Settings &rarr; Privacy &amp; Security.</p>
+  </div>
+  <div class="panel" id="linux">
+    <pre><code>curl -LO https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest/download/AtaramEmailAnalyzer-linux-x64.zip
+unzip AtaramEmailAnalyzer-linux-x64.zip
+./AtaramEmailAnalyzer/AtaramEmailAnalyzer</code></pre>
+    <p>Opens your browser at <code>http://127.0.0.1:8321</code>. Headless? Set
+    <code>ATARAM_NO_BROWSER=1</code> and browse to the printed URL.</p>
+  </div>
+  <div class="panel" id="docker">
+    <pre><code>curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
+docker compose -f docker-compose.release.yml up</code></pre>
+    <p>Then open <code>http://localhost:3000</code>. The full stack — hardened
+    containers, Redis-backed caching — for teams or always-on use.</p>
+  </div>
+  <div class="panel" id="pipx">
+    <pre><code>pipx install ataram-email-analyzer
+ataram-analyzer</code></pre>
+    <p>Requires Python 3.11+. Installs an isolated environment and opens the
+    browser on launch.</p>
+  </div>
+
+  <h2>Try it in ten seconds</h2>
+  <p style="color: var(--muted);">The repository ships five synthetic
+  <a href="https://github.com/YoniEzs/Ataram-Email-Analyzer/tree/main/samples">sample emails</a>
+  — a clean baseline, a display-name spoof, a homograph sender, a BCC delivery and a
+  double-extension ZIP — with the expected verdicts documented. Drag one in.</p>
+
+  <footer>
+    <p>MIT licensed &middot;
+      <a href="https://github.com/YoniEzs/Ataram-Email-Analyzer">Source</a> &middot;
+      <a href="https://github.com/YoniEzs/Ataram-Email-Analyzer/blob/main/PRIVACY.md">Privacy</a> &middot;
+      <a href="https://github.com/YoniEzs/Ataram-Email-Analyzer/blob/main/DISCLAIMER.md">Disclaimer</a> &middot;
+      <a href="https://github.com/YoniEzs/Ataram-Email-Analyzer/security">Report a vulnerability</a></p>
+    <p style="margin-top:0.5rem;">Analysis results are advisory. Verdicts are not a
+    guarantee that a message is safe or malicious.</p>
+  </footer>
+</div>
+<script>
+  document.querySelectorAll('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+      document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.panel).classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

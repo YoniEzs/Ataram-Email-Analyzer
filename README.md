@@ -91,6 +91,36 @@ can be fabricated.
 - DNS record presence is informational; it is not proof that a particular
   message passed authentication.
 
+## Run it in 2 minutes
+
+Pick whichever fits your machine — every option runs entirely locally:
+
+**Desktop app (Windows / macOS / Linux)** — download the zip for your OS from
+the [latest release](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest),
+extract, run `AtaramEmailAnalyzer`. Your browser opens by itself. Binaries are
+unsigned; verify downloads against the release's `SHA256SUMS.txt`.
+
+**pipx** (Python 3.11+):
+
+```bash
+pipx install ataram-email-analyzer
+ataram-analyzer
+```
+
+**Docker, from published images** — no build step:
+
+```bash
+curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
+docker compose -f docker-compose.release.yml up
+```
+
+Then try the synthetic messages in [`samples/`](samples/) — each documents the
+verdict it should produce.
+
+The desktop and pipx builds bind to `127.0.0.1` only and serve the UI and API
+from one process; the Docker stack is the hardened multi-container deployment
+for teams.
+
 ## Quick start with Docker
 
 Requirements: Docker Engine with Compose v2.

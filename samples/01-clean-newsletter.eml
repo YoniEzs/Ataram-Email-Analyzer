@@ -1,0 +1,18 @@
+Received: from mail-a.newsletter.example.com (mail-a.newsletter.example.com [8.8.8.8])
+	by mx.yourcompany.example with ESMTPS id NL001
+	for <analyst@yourcompany.example>; Mon, 10 Aug 2026 09:15:00 +0000
+From: Example Weekly <newsletter@newsletter.example.com>
+To: analyst@yourcompany.example
+Subject: Your weekly product update
+Date: Mon, 10 Aug 2026 09:14:55 +0000
+Message-ID: <nl-2026-08-10@newsletter.example.com>
+List-Unsubscribe: <mailto:unsub@newsletter.example.com>
+
+Hi,
+
+Here is what changed in the product this week. No action needed.
+
+- Feature A shipped
+- Bugfix B landed
+
+The Example Team
