@@ -78,6 +78,36 @@ const render = await page.evaluate(() => {
         attachments: { total_count: 0 },
         routing: { hops: ['hop1'], hop_count: 1 },
         routing_forensics: { hop_count: 1, public_ips: [], originating_ip: null, timezone_offset: null },
+        artifacts: {
+            schema_version: 1,
+            checklist: {
+                sender_address: 'a@b.com', subject: 'test', recipients: 'c@d.com',
+                date_utc: '2026-03-09T09:00:00+00:00',
+                sending_server_ip: '8.8.8.8', reverse_dns: 'dns.google', reply_to: 'r@b.com',
+            },
+            sender: { trust: 'header_claim', address: 'a@b.com', display_name: 'A',
+                      registered_domain: 'b.com', flags: [] },
+            subject: { trust: 'header_claim', value: 'test', charsets: [], flags: [] },
+            recipients: { trust: 'header_claim', to: [{ name: '', address: 'c@d.com' }],
+                          cc: [], bcc_inferred: ['hidden@d.com'], undisclosed: false, flags: [] },
+            date: { trust: 'header_claim', utc: '2026-03-09T09:00:00+00:00',
+                    offset_minutes: 0, skew_vs_oldest_received_seconds: -42, flags: [] },
+            sending_server: {
+                trust: 'header_claim', ip: '8.8.8.8', helo_claimed: 'mail.evil.example', flags: [],
+                enrichment: {
+                    reverse_dns: { trust: 'observed', ptr_name: 'dns.google',
+                                   fcrdns: 'fail', ptr_matches_helo: false },
+                    ip_intel: { trust: 'observed', asn: '15169', as_name: 'GOOGLE - Google LLC, US',
+                                bgp_prefix: '8.8.8.0/24', country: 'US', registry: 'arin',
+                                rdap: { name: 'GOGL', abuse_email: 'abuse@google.com' } },
+                },
+            },
+            reverse_dns: { trust: 'observed', value: 'dns.google', flags: [] },
+            reply_to: { trust: 'header_claim', address: 'r@b.com', flags: [] },
+            authentication_advisory: { spf: { result: 'softfail', advisory: true, trusted: false } },
+            flags: [{ code: 'fcrdns_fail', severity: 'medium', trust: 'observed', scope: 'sending_server' }],
+            enrichment_status: { reverse_dns: 'ok', ip_intel: 'ok', spf_advisory: 'ok' },
+        },
         metadata: { filename: 'sample.eml' },
     };
     window.resultsRenderer.render(window.lastAnalysisResult);
@@ -89,6 +119,7 @@ const render = await page.evaluate(() => {
         scoreText: (document.querySelector('.score-num') || {}).textContent || '',
         factorCount: document.querySelectorAll('.factor-item').length,
         tabCount: document.querySelectorAll('.tab-btn').length,
+        tabLabels: Array.from(document.querySelectorAll('.tab-btn')).map(e => e.textContent.trim()),
     };
 });
 expect(render.cardTitles.includes('כותרות המייל'), 'results render in hebrew');
@@ -99,6 +130,10 @@ expect(render.hasVerdict, 'verdict summary card renders');
 expect(render.scoreText === '62', 'score ring shows the score');
 expect(render.factorCount === 2, 'risk factors render');
 expect(render.tabCount >= 5, 'detail tabs render');
+expect(render.conclusionText.includes('נצפה'), 'conclusion marks observed values');
+expect(render.conclusionText.includes('טענה מהכותרות'), 'conclusion marks forgeable header claims');
+expect(render.conclusionText.includes('AS15169'), 'conclusion shows the ASN');
+expect(render.tabLabels.includes('ארטיפקטים'), 'artifacts tab renders in hebrew');
 
 // Switching tabs reveals a previously hidden panel.
 const tabSwitch = await page.evaluate(() => {
@@ -111,8 +146,34 @@ const tabSwitch = await page.evaluate(() => {
 });
 expect(tabSwitch, 'clicking a tab activates its panel');
 
+// The artifact block must survive a round-trip into pasteable text, and must
+// keep saying which values are forgeable once the badges are gone.
+const artifactText = await page.evaluate(
+    () => window.resultsRenderer.buildArtifactText(window.lastAnalysisResult)
+);
+expect(artifactText.includes('8.8.8.8'), 'export carries the sending IP');
+expect(artifactText.includes('dns.google'), 'export carries reverse DNS');
+expect(artifactText.includes('FCrDNS: fail'), 'export carries the FCrDNS verdict');
+expect(artifactText.includes('AS15169'), 'export carries the ASN');
+expect(artifactText.includes('fcrdns_fail'), 'export carries flags');
+expect(/forgeable|לזיוף/.test(artifactText), 'export states which fields are forgeable');
+
+// Missing enrichment must explain itself rather than render blank.
+const missingReason = await page.evaluate(() => {
+    const r = JSON.parse(JSON.stringify(window.lastAnalysisResult));
+    r.conclusion.reverse_dns = null;
+    r.artifacts.reverse_dns = { trust: 'observed', value: null, flags: [] };
+    r.artifacts.enrichment_status.reverse_dns = 'disabled';
+    window.resultsRenderer.render(r);
+    const card = document.querySelector('.conclusion-card');
+    return card ? card.textContent : '';
+});
+expect(missingReason.includes('הבדיקה מושבתת'), 'disabled lookup explains itself');
+await page.evaluate(() => window.resultsRenderer.render(window.lastAnalysisResult));
+
 await page.click('#langToggle');
 await page.waitForTimeout(200);
+
 expect(await page.evaluate(() => document.documentElement.dir) === 'ltr', 'toggle back to ltr');
 
 await browser.close();

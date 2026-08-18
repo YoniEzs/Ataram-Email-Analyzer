@@ -13,6 +13,7 @@ on:
       - 'backend/**'
       - 'frontend/src/index.html'
       - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read

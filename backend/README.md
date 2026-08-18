@@ -28,7 +28,12 @@ pip-audit -r requirements-prod.txt
 
 - `python-oxmsg` parses MSG files under an MIT license.
 - Raw EML bytes are retained only in request memory for DKIM verification.
-- SPF/DMARC header values are display-only and untrusted.
-- RDAP, DNS, AbuseIPDB and VirusTotal are bounded outbound lookups.
+- SPF/DMARC header values are display-only and untrusted, including the
+  advisory SPF re-evaluation behind `ENABLE_SPF_ADVISORY`.
+- RDAP, DNS, AbuseIPDB, VirusTotal, reverse DNS and Team Cymru are bounded
+  outbound lookups; the four IP-based ones disclose an address taken from
+  `Received`, which is often your own infrastructure.
+- Artifact flags are scored only when `trust` is `observed` or `computed`;
+  `header_claim` flags are reported and never scored.
 - `REDIS_URL` shares lookup caches; `RATELIMIT_STORAGE_URI` shares limits.
 - See `.env.example`, `../PRIVACY.md` and `../SECURITY.md`.

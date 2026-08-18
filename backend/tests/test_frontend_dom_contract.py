@@ -20,6 +20,7 @@ REQUIRED_IDS = {
     "errorMessage",
     "retryButton",
     "exportBar",
+    "copyArtifactsBtn",
     "downloadReportBtn",
     "printReportBtn",
     "historySection",

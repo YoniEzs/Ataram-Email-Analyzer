@@ -24,7 +24,7 @@ class ResultsRenderer {
 
         this.container.innerHTML = `
             ${this.renderSummary(data)}
-            ${this.renderConclusion(data.conclusion)}
+            ${this.renderConclusion(data.conclusion, data.artifacts)}
             ${this.renderRiskFactors(data.risk_assessment)}
             ${this.renderSuspicions(data.suspicions)}
             ${this.renderTabs(data)}
@@ -84,22 +84,39 @@ class ResultsRenderer {
     /**
      * Conclusion card — the key "official artifacts", with copy + pivots.
      */
-    renderConclusion(conclusion) {
+    renderConclusion(conclusion, artifacts) {
         if (!conclusion) return '';
 
+        const a = artifacts || {};
+        const server = a.sending_server || {};
+        const enrichment = server.enrichment || {};
+        const rdns = enrichment.reverse_dns || {};
+        const intel = enrichment.ip_intel || {};
+        const status = a.enrichment_status || {};
+
+        // Each row says where its value came from. Without this the card reads
+        // as seven equally solid facts, when most of them are attacker-controlled.
         const rows = [
-            [t('Sender Address'), this.valueCell(conclusion.sender_address, { copy: true })],
-            [t('Subject Line'), this.valueCell(conclusion.subject, {})],
-            [t('Recipients'), this.valueCell(conclusion.recipients, {})],
-            [t('Date + Time'), this.valueCell(conclusion.date, {})],
-            [t('Sending Server IP'), this.valueCell(conclusion.sending_server_ip, { code: true, copy: true, ip: true })],
-            [t('Reverse DNS of Sending Server'), this.valueCell(conclusion.reverse_dns, { code: true, copy: true })],
-            [t('Reply-To Address'), this.valueCell(conclusion.reply_to, { copy: true })],
+            [t('Sender Address'), this.valueCell(conclusion.sender_address, { copy: true }), a.sender],
+            [t('Subject Line'), this.valueCell(conclusion.subject, {}), a.subject],
+            [t('Recipients'), this.valueCell(conclusion.recipients, {}), a.recipients],
+            [t('Date + Time'), this.valueCell(conclusion.date, {}), a.date],
+            [t('Sending Server IP'), this.valueCell(conclusion.sending_server_ip, { code: true, copy: true, ip: true }), server],
+            [
+                t('Reverse DNS of Sending Server'),
+                this.valueCell(conclusion.reverse_dns, {
+                    code: true, copy: true,
+                    empty: this.missingReason(status.reverse_dns),
+                }),
+                a.reverse_dns,
+            ],
+            [t('Reply-To Address'), this.valueCell(conclusion.reply_to, { copy: true }), a.reply_to],
         ];
 
-        const rowsHtml = rows.map(([label, cell]) => `
-            <tr><th>${this.escapeHtml(label)}</th><td>${cell}</td></tr>
-        `).join('');
+        const rowsHtml = rows.map(([label, cell, artifact]) => {
+            const badge = artifact && artifact.trust ? ' ' + this.trustBadge(artifact.trust) : '';
+            return `<tr><th>${this.escapeHtml(label)}</th><td>${cell}${badge}</td></tr>`;
+        }).join('') + this.renderConclusionEnrichment(rdns, intel);
 
         return `
             <div class="result-card conclusion-card">
@@ -114,6 +131,52 @@ class ResultsRenderer {
                 <table class="data-table">${rowsHtml}</table>
             </div>
         `;
+    }
+
+    /**
+     * FCrDNS and ASN sub-rows appended to the Conclusion table.
+     */
+    renderConclusionEnrichment(rdns, intel) {
+        const rows = [];
+        if (rdns.fcrdns) {
+            const tone = rdns.fcrdns === 'pass' ? 'success'
+                : rdns.fcrdns === 'fail' ? 'danger' : 'warning';
+            rows.push(`<tr><th>${t('Forward-Confirmed rDNS')}</th><td>
+                <span class="pill ${tone}">${this.escapeHtml(t(rdns.fcrdns))}</span>
+                ${this.trustBadge('observed')}</td></tr>`);
+        }
+        if (rdns.ptr_matches_helo === false && rdns.ptr_name) {
+            // Half observed, half claimed — shown, never scored.
+            rows.push(`<tr><th>${t('HELO vs Reverse DNS')}</th><td>
+                <span class="pill warning">${t('Mismatch')}</span>
+                ${this.trustBadge('header_claim')}</td></tr>`);
+        }
+        if (intel.asn) {
+            const name = intel.as_name ? ' ' + this.escapeHtml(intel.as_name) : '';
+            rows.push(`<tr><th>${t('ASN')}</th><td><code>AS${this.escapeHtml(intel.asn)}</code>${name}
+                ${this.trustBadge('observed')}</td></tr>`);
+        }
+        return rows.join('');
+    }
+
+    trustBadge(trust) {
+        if (trust === 'observed') return `<span class="pill success">${t('Observed')}</span>`;
+        if (trust === 'computed') return `<span class="pill info">${t('Computed')}</span>`;
+        return `<span class="pill warning">${t('Header claim')}</span>`;
+    }
+
+    /**
+     * Explain an empty enrichment value instead of leaving the analyst guessing.
+     */
+    missingReason(status) {
+        switch (status) {
+            case 'disabled': return t('Lookup disabled');
+            case 'skipped_no_public_ip': return t('No public sending IP');
+            case 'unavailable': return t('No data returned');
+            case 'error': return t('Lookup failed');
+            case 'timeout': return t('Lookup timed out');
+            default: return t('N/A');
+        }
     }
 
     /**
@@ -195,6 +258,197 @@ class ResultsRenderer {
     }
 
     /**
+     * Artifacts tab — the parsed detail behind the Conclusion card.
+     *
+     * The Conclusion card shows each field as received; this shows what the
+     * analyzer made of it, and which parts were checked against live DNS.
+     */
+    renderArtifacts(artifacts) {
+        if (!artifacts || !artifacts.checklist) return '';
+
+        const sender = artifacts.sender || {};
+        const subject = artifacts.subject || {};
+        const recipients = artifacts.recipients || {};
+        const date = artifacts.date || {};
+        const server = artifacts.sending_server || {};
+        const intel = (server.enrichment || {}).ip_intel || {};
+        const rdap = intel.rdap || {};
+        const status = artifacts.enrichment_status || {};
+
+        const rows = [];
+        const row = (label, cell) => rows.push(
+            `<tr><th>${this.escapeHtml(label)}</th><td>${cell}</td></tr>`
+        );
+
+        row(t('Sender Address'), this.valueCell(sender.address, { copy: true }));
+        if (sender.display_name) {
+            row(t('Display Name'), this.valueCell(sender.display_name, {}));
+        }
+        row(t('Sender Domain'), this.valueCell(sender.registered_domain, { copy: true, domain: true }));
+        if (subject.charsets && subject.charsets.length) {
+            row(t('Subject Charsets'), this.valueCell(subject.charsets.join(', '), { code: true }));
+        }
+        row(t('To'), this.valueCell(
+            (recipients.to || []).map(r => r.address).filter(Boolean).join(', '), {}
+        ));
+        row(t('Cc'), this.valueCell(
+            (recipients.cc || []).map(r => r.address).filter(Boolean).join(', '), {}
+        ));
+        if ((recipients.bcc_inferred || []).length) {
+            row(t('Delivered via BCC'), this.valueCell(recipients.bcc_inferred.join(', '), {}));
+        }
+        row(t('Date (UTC)'), this.valueCell(date.utc, { code: true }));
+        if (typeof date.skew_vs_oldest_received_seconds === 'number') {
+            row(t('Skew vs First Hop'), this.valueCell(
+                `${date.skew_vs_oldest_received_seconds}s`, { code: true }
+            ));
+        }
+        row(t('Sending Server IP'), this.valueCell(server.ip, { code: true, copy: true, ip: true }));
+        if (server.helo_claimed) {
+            row(t('HELO Claimed'), this.valueCell(server.helo_claimed, { code: true }));
+        }
+        if (intel.bgp_prefix) {
+            row(t('BGP Prefix'), this.valueCell(intel.bgp_prefix, { code: true }));
+        }
+        const country = intel.country || rdap.country;
+        if (country) {
+            row(t('Allocated To'), this.valueCell(
+                intel.registry ? `${country} / ${intel.registry}` : country, {}
+            ));
+        }
+        if (rdap.name) row(t('Network'), this.valueCell(rdap.name, {}));
+        if (rdap.abuse_email) {
+            // Plain text, never a mailto: link.
+            row(t('Abuse Contact'), this.valueCell(rdap.abuse_email, { code: true, copy: true }));
+        }
+
+        const spf = (artifacts.authentication_advisory || {}).spf;
+        const advisoryHtml = spf && spf.result ? `
+            <table class="data-table" style="margin-top:0.75rem;">
+                <tr><th>${t('Advisory SPF')}</th><td>
+                    <span class="pill warning">${this.escapeHtml(t(spf.result))}</span>
+                    <div class="muted" style="font-size:0.85em; margin-top:0.25rem;">
+                        ${t('Advisory only - never trusted')}
+                    </div>
+                </td></tr>
+            </table>` : '';
+
+        const flags = artifacts.flags || [];
+        const flagsHtml = flags.length ? `<div style="margin-top:0.75rem;">${
+            flags.map(f => {
+                const tone = f.severity === 'high' || f.severity === 'critical' ? 'danger'
+                    : f.severity === 'medium' ? 'warning' : 'info';
+                return `<span class="pill ${tone}">${this.escapeHtml(t(f.code))}</span>`;
+            }).join(' ')
+        }</div>` : '';
+
+        const statusHtml = Object.keys(status).length ? `
+            <p class="muted" style="margin-top:0.75rem; font-size:0.85em;">
+                ${Object.entries(status).map(
+                    ([k, v]) => `${this.escapeHtml(t(k))}: ${this.escapeHtml(t(v))}`
+                ).join(' · ')}
+            </p>` : '';
+
+        return `
+            <div class="result-card">
+                <div class="result-card-header">
+                    <svg class="result-card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <h3 class="result-card-title">${t('Artifacts')}</h3>
+                </div>
+                <table class="data-table">${rows.join('')}</table>
+                ${advisoryHtml}
+                ${flagsHtml}
+                ${statusHtml}
+                <p class="muted" style="margin-top:0.75rem; font-size:0.85em;">
+                    ${t('Observed = checked live at analysis time. Header claim = read from the file and forgeable.')}
+                </p>
+            </div>
+        `;
+    }
+
+    recipientSummary(recipients) {
+        if (!recipients) return '';
+        const parts = [];
+        const to = (recipients.to || []).map(r => r.address).filter(Boolean);
+        const cc = (recipients.cc || []).map(r => r.address).filter(Boolean);
+        if (to.length) parts.push(to.join(', '));
+        if (cc.length) parts.push(`${cc.length} ${t('in Cc')}`);
+        if (recipients.undisclosed) parts.push(t('undisclosed'));
+        if ((recipients.bcc_inferred || []).length) {
+            parts.push(`${recipients.bcc_inferred.length} ${t('via BCC')}`);
+        }
+        return parts.join(' \u00b7 ');
+    }
+
+    /**
+     * Plain-text artifact block for pasting into a ticket.
+     */
+    buildArtifactText(result) {
+        const artifacts = (result || {}).artifacts;
+        if (!artifacts || !artifacts.checklist) return '';
+
+        const checklist = artifacts.checklist;
+        const server = artifacts.sending_server || {};
+        const intel = (server.enrichment || {}).ip_intel || {};
+        const rdns = (server.enrichment || {}).reverse_dns || {};
+        const risk = result.risk_assessment || {};
+        const filename = (result.metadata || {}).filename || '';
+
+        let reverse = checklist.reverse_dns || t('N/A');
+        if (rdns.fcrdns) reverse += ` (FCrDNS: ${rdns.fcrdns})`;
+
+        let asn = t('N/A');
+        if (intel.asn) {
+            asn = `AS${intel.asn}${intel.as_name ? ' ' + intel.as_name : ''}`;
+            if (intel.bgp_prefix) asn += ` (${intel.bgp_prefix})`;
+        }
+
+        // Any value may itself contain a pipe - a subject line, or the
+        // recipient summary - which would otherwise split the table row.
+        const cell = (value) => String(value ?? '').replace(/\|/g, '\\|');
+
+        const lines = [
+            `## ${t('Artifacts')}${filename ? ' - ' + filename : ''}`,
+            '',
+            `| ${t('Field')} | ${t('Value')} |`,
+            '|---|---|',
+            `| ${t('Sender Address')} | ${cell(checklist.sender_address || t('N/A'))} |`,
+            `| ${t('Subject Line')} | ${cell(checklist.subject || t('N/A'))} |`,
+            `| ${t('Recipients')} | ${cell(this.recipientSummary(artifacts.recipients) || t('N/A'))} |`,
+            `| ${t('Date + Time')} | ${cell(checklist.date_utc || t('N/A'))} |`,
+            `| ${t('Sending Server IP')} | ${cell(checklist.sending_server_ip || t('N/A'))} |`,
+            `| ${t('Reverse DNS')} | ${cell(reverse)} |`,
+            `| ${t('Reply-To')} | ${cell(checklist.reply_to || t('N/A'))} |`,
+            `| ${t('ASN')} | ${cell(asn)} |`,
+            `| ${t('Risk')} | ${risk.level || '?'} ${risk.score !== undefined ? risk.score + '/100' : ''} |`,
+        ];
+
+        const flags = artifacts.flags || [];
+        if (flags.length) {
+            lines.push('', `${t('Flags')}: ` + flags.map(f => `${f.code} (${f.severity})`).join(', '));
+        }
+
+        const advisory = (artifacts.authentication_advisory || {}).spf;
+        if (advisory && advisory.result) {
+            lines.push(`${t('Advisory SPF')}: ${advisory.result} - ${t('Advisory only - never trusted')}`);
+        }
+
+        // Spell the trust split out: this text gets pasted somewhere the badges
+        // and colours do not survive.
+        lines.push(
+            '',
+            `${t('Header claims (forgeable, read from the uploaded file)')}: ` +
+                'From, Subject, To/Cc, Date, Received IP, HELO, Reply-To',
+            `${t('Observed (checked live at analysis time)')}: ` +
+                'PTR, FCrDNS, ASN, RDAP'
+        );
+        return lines.join('\n');
+    }
+
+    /**
      * Detail tabs. Every panel is rendered into the DOM (hidden unless active)
      * so printing shows everything and nothing is lost on tab switch.
      */
@@ -202,6 +456,7 @@ class ResultsRenderer {
         const routingContent = `${this.renderRouting(data.routing)}${this.renderHeaderForensics(data.routing_forensics)}`;
 
         const tabs = [
+            { label: t('Artifacts'), content: this.renderArtifacts(data.artifacts) },
             { label: t('Authentication'), content: this.renderAuthentication(data.authentication) },
             { label: t('Sender & IP'), content: this.renderSenderInfo(data.sender_info) },
             { label: t('Content Analysis'), content: this.renderContent(data.content) },

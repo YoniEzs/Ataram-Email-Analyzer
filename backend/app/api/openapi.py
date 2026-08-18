@@ -5,7 +5,7 @@ Hand-maintained: update this file when endpoint contracts change.
 Served at /api/openapi.json and /api/v1/openapi.json.
 """
 
-API_VERSION = '2.1'
+API_VERSION = '2.2'
 
 OPENAPI_SPEC = {
     'openapi': '3.0.3',
@@ -182,7 +182,10 @@ OPENAPI_SPEC = {
                         'type': 'object',
                         'description': (
                             'Concise summary of the key "official artifacts" '
-                            'extracted from the message.'
+                            'extracted from the message. Projected from '
+                            '"artifacts" so the two never disagree. Values are '
+                            'verbatim as received (RFC2047-decoded); the parsed '
+                            'and normalised view is in artifacts.checklist.'
                         ),
                         'properties': {
                             'sender_address': {'type': 'string', 'nullable': True},
@@ -203,6 +206,70 @@ OPENAPI_SPEC = {
                         },
                     },
                     'headers': {'type': 'object'},
+                    'artifacts': {
+                        'type': 'object',
+                        'description': (
+                            'Analyst triage checklist and its enrichment. Every '
+                            'artifact and flag carries a trust value: '
+                            '"header_claim" for anything read from the uploaded '
+                            'file, "computed" for a deterministic property of '
+                            'that claim, and "observed" for a live DNS or RDAP '
+                            'lookup performed at analysis time. Only computed '
+                            'and observed signals affect the risk score.'
+                        ),
+                        'properties': {
+                            'schema_version': {'type': 'integer'},
+                            'checklist': {
+                                'type': 'object',
+                                'description': (
+                                    'Flat summary: sender address, subject, '
+                                    'recipients, date, sending server IP, '
+                                    'reverse DNS and Reply-To. Normalised '
+                                    '(parsed address, UTC date, To/Cc split), '
+                                    'unlike the verbatim top-level conclusion.'
+                                ),
+                            },
+                            'sender': {'type': 'object'},
+                            'subject': {'type': 'object'},
+                            'recipients': {
+                                'type': 'object',
+                                'description': (
+                                    'To and Cc split out, plus bcc_inferred: '
+                                    'envelope recipients that appear in neither.'
+                                ),
+                            },
+                            'date': {'type': 'object'},
+                            'sending_server': {
+                                'type': 'object',
+                                'description': (
+                                    'Originating IP with reverse-DNS and ASN/RDAP '
+                                    'enrichment under "enrichment".'
+                                ),
+                            },
+                            'reverse_dns': {'type': 'object'},
+                            'reply_to': {'type': 'object'},
+                            'return_path': {'type': 'object'},
+                            'message_id': {'type': 'object'},
+                            'received_chain': {'type': 'array', 'items': {'type': 'object'}},
+                            'authentication_advisory': {
+                                'type': 'object',
+                                'description': (
+                                    'Advisory SPF re-evaluation. Display-only: its '
+                                    'client IP and MAIL FROM come from forgeable '
+                                    'headers, so it never affects the risk score '
+                                    'and is never merged into "authentication".'
+                                ),
+                            },
+                            'flags': {'type': 'array', 'items': {'type': 'object'}},
+                            'enrichment_status': {
+                                'type': 'object',
+                                'description': (
+                                    'Per-source outcome: ok, disabled, '
+                                    'skipped_no_public_ip, unavailable, error.'
+                                ),
+                            },
+                        },
+                    },
                     'authentication': {
                         'type': 'object',
                         'properties': {

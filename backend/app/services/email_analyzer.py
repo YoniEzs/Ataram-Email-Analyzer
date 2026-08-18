@@ -5,10 +5,17 @@ Main analysis orchestrator that coordinates all analysis modules
 
 import logging
 import time
+from functools import partial
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
+from app.services.artifact_extractor import (
+    ArtifactExtractorService,
+    collect_flags,
+)
 from app.services.dns_checker import DNSCheckerService
+from app.services.ip_intel import IPIntelService
+from app.services.spf_advisor import SPFAdvisorService
 from app.services.whois_service import WhoisService
 from app.services.ip_reputation import IPReputationService
 from app.services.url_analyzer import URLAnalyzerService
@@ -18,10 +25,98 @@ from app.services.header_forensics import HeaderForensicsService
 from app.services.auth_verifier import AuthVerifierService
 from app.services.virustotal_service import VirusTotalService
 from app.services.yara_scanner import get_scanner
+from app.utils.domains import registered_domain
 from app.utils.extractors import extract_sender_domain, extract_sender_ip
 from app.utils.validators import validate_domain, validate_public_ip
 
 logger = logging.getLogger(__name__)
+
+
+# Artifact flags that contribute to the risk score, and by how much.
+#
+# The rule for inclusion is that an attacker who controls the uploaded file
+# cannot make the signal go away by editing headers:
+#   observed  - re-queried from DNS at analysis time
+#   computed  - a property of the attacker's own chosen string, where choosing
+#               it is itself the evidence (script mixing, self-contradiction)
+#
+# Everything else is shown to the analyst and scored at zero. In particular
+# ptr_helo_mismatch is the sharpest new indicator here, but the HELO half of
+# the comparison is forgeable, so it stays unscored. Artifact flags can only
+# ever raise a score, never lower one.
+ARTIFACT_SCORE_POINTS: Dict[str, int] = {
+    'fcrdns_fail': 5,
+    'bidi_override_in_subject': 5,
+    'homoglyph_sender_domain': 5,
+    'sender_domain_has_no_mx': 4,
+    'date_before_first_hop': 3,
+    'date_after_last_hop': 3,
+}
+ARTIFACT_SCORE_CAP = 15
+
+# Artifact flags worth reporting to the analyst, with the wording used in the
+# suspicions list. Membership here says nothing about scoring.
+ARTIFACT_SUSPICION_MESSAGES: Dict[str, Tuple[str, str]] = {
+    'fcrdns_fail': (
+        'sending_server',
+        'Reverse DNS for the sending IP does not forward-confirm (FCrDNS failed)',
+    ),
+    'no_ptr_record': (
+        'sending_server', 'Sending IP has no reverse DNS (PTR) record'
+    ),
+    'ptr_helo_mismatch': (
+        'sending_server',
+        'Reverse DNS name does not match the HELO name claimed in Received',
+    ),
+    'no_public_sender_ip': (
+        'sending_server', 'No public sending IP could be recovered from Received headers'
+    ),
+    'sender_domain_has_no_mx': (
+        'sender', 'Sender domain publishes no MX records'
+    ),
+    'homoglyph_sender_domain': (
+        'sender', 'Sender domain mixes scripts and imitates a Latin domain'
+    ),
+    'punycode_sender_domain': ('sender', 'Sender domain is punycode-encoded'),
+    'display_name_domain_mismatch': (
+        'sender', 'Display name contains an address from a different domain'
+    ),
+    'disposable_sender_domain': (
+        'sender', 'Sender domain is a known disposable mailbox provider'
+    ),
+    'multiple_from_addresses': ('sender', 'Message carries multiple From addresses'),
+    'bidi_override_in_subject': (
+        'subject', 'Subject contains bidirectional override characters'
+    ),
+    'zero_width_in_subject': ('subject', 'Subject contains zero-width characters'),
+    'mixed_charsets_in_subject': (
+        'subject', 'Subject mixes multiple encoded-word character sets'
+    ),
+    'reply_prefix_without_thread_headers': (
+        'subject', 'Subject claims to be a reply but carries no thread headers'
+    ),
+    'possible_bcc_delivery': (
+        'recipients', 'Delivered to an address absent from To and Cc (possible BCC)'
+    ),
+    'undisclosed_recipients': ('recipients', 'Recipients are undisclosed'),
+    'large_recipient_list': ('recipients', 'Unusually large visible recipient list'),
+    'future_dated': ('date', 'Date header is in the future'),
+    'date_before_first_hop': (
+        'date', 'Date header predates the first Received hop'
+    ),
+    'date_after_last_hop': (
+        'date', 'Date header is later than the last Received hop'
+    ),
+    'received_chain_out_of_order': (
+        'date', 'Received chain timestamps are out of order'
+    ),
+    'freemail_reply_target': (
+        'reply_to', 'Reply-To points at consumer webmail while the sender does not'
+    ),
+    'message_id_domain_differs_from_sender': (
+        'headers', 'Message-ID domain differs from the sender domain'
+    ),
+}
 
 
 class EmailAnalyzerService:
@@ -47,6 +142,12 @@ class EmailAnalyzerService:
         dns_timeout: int = 5,
         whois_timeout: int = 10,
         http_timeout: int = 10,
+        enable_reverse_dns: bool = True,
+        enable_ip_rdap: bool = True,
+        enable_asn_lookup: bool = True,
+        enable_spf_advisory: bool = False,
+        enable_mx_lookup: bool = False,
+        spf_timeout: int = 8,
     ):
         self.dns_checker = DNSCheckerService(timeout=dns_timeout)
         self.whois_service = (
@@ -81,6 +182,22 @@ class EmailAnalyzerService:
             max_archive_ratio=max_archive_ratio,
         )
         self.header_forensics = HeaderForensicsService()
+        self.artifact_extractor = ArtifactExtractorService()
+        self.enable_reverse_dns = enable_reverse_dns
+        self.enable_mx_lookup = enable_mx_lookup
+        self.ip_intel = (
+            IPIntelService(
+                dns_checker=self.dns_checker,
+                http_timeout=http_timeout,
+                enable_rdap=enable_ip_rdap,
+                enable_asn=enable_asn_lookup,
+            )
+            if (enable_ip_rdap or enable_asn_lookup)
+            else None
+        )
+        self.spf_advisor = (
+            SPFAdvisorService(timeout=spf_timeout) if enable_spf_advisory else None
+        )
         self.whitelist_domains = {
             domain.strip().lower()
             for domain in (whitelist_domains or [])
@@ -88,7 +205,11 @@ class EmailAnalyzerService:
         }
         # Every lookup already enforces its own timeout; this is a safety net
         # so one misbehaving lookup can never stall a whole analysis.
-        self.lookup_deadline = max(dns_timeout, whois_timeout, http_timeout) + 5
+        # Reverse DNS is PTR followed by a forward A/AAAA confirmation, so
+        # its worst case is several sequential round-trips rather than one.
+        self.lookup_deadline = (
+            max(dns_timeout * 3, whois_timeout, http_timeout, spf_timeout) + 5
+        )
 
     def analyze(self, parsed_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -125,6 +246,13 @@ class EmailAnalyzerService:
         if not dkim_domain or not validate_domain(dkim_domain.lower()):
             dkim_domain = sender_domain
 
+        # Offline artifacts first: the lookups below need the originating IP,
+        # the claimed HELO and the envelope sender it derives.
+        artifacts = self.artifact_extractor.extract(
+            headers, sender_domain=sender_domain
+        )
+        spf_mail_from = artifacts.pop('_spf_mail_from', None)
+
         # Local analysis first (CPU only) — its outputs feed the lookups
         combined_text = f"{body_text}\n{body_html}"
         content_analysis = self.content_analyzer.analyze(combined_text, body_html)
@@ -151,6 +279,8 @@ class EmailAnalyzerService:
                 if a.get('sha256')
             ],
             raw_bytes=parsed_data.get('raw_bytes'),
+            artifacts=artifacts,
+            spf_mail_from=spf_mail_from,
         )
         spf_record = lookups.get('spf')
         dmarc_record = lookups.get('dmarc')
@@ -158,7 +288,7 @@ class EmailAnalyzerService:
         whois_data = lookups.get('whois')
         abuse_data = lookups.get('abuse')
         verification = lookups.get('verify')
-        reverse_dns = lookups.get('reverse_dns')
+        reverse_dns = (lookups.get('rdns') or {}).get('ptr_name')
 
         # Merge VirusTotal verdicts into the attachment results
         self._apply_virustotal(lookups.get('vt') or {}, attachment_analysis)
@@ -176,11 +306,15 @@ class EmailAnalyzerService:
             sender_domain=sender_domain or ''
         )
 
+        # Fold live lookups into the artifact block and refresh its flags.
+        self._merge_artifact_enrichment(artifacts, lookups, sender_domain)
+
         # Detect suspicions (now also checks domain age)
         suspicions = self._detect_suspicions(
             headers, abuse_data, auth_analysis,
             url_analysis, attachment_analysis, whois_data,
             verification=verification,
+            artifacts=artifacts,
         )
 
         # Calculate risk score (domain age + compound rules + whitelist)
@@ -189,23 +323,20 @@ class EmailAnalyzerService:
             attachment_analysis, content_analysis, suspicions,
             whois_data=whois_data, sender_domain=sender_domain,
             verification=verification,
+            artifacts=artifacts,
         )
 
         return {
             'timestamp': datetime.now(timezone.utc).isoformat(),
             # Concise "official artifacts" summary — the key, verifiable facts
             # extracted from the message, surfaced up front as a conclusion.
-            'conclusion': {
-                'sender_address': headers.get('sender'),
-                'subject': headers.get('subject'),
-                # BCC recipients never appear in delivered headers, so this
-                # reflects only the visible To/Cc recipients.
-                'recipients': headers.get('recipients'),
-                'date': headers.get('date'),
-                'sending_server_ip': sender_ip,
-                'reverse_dns': reverse_dns,
-                'reply_to': headers.get('reply_to'),
-            },
+            #
+            # Projected from `artifacts` so the two can never disagree. This
+            # deliberately reads each artifact's verbatim `value`, not its
+            # parsed form: `conclusion` reports the message as received, while
+            # `artifacts.checklist` reports it normalised (parsed address, UTC
+            # date, recipients split into To and Cc).
+            'conclusion': self._build_conclusion(artifacts),
             'headers': {
                 'sender': headers.get('sender'),
                 'recipients': headers.get('recipients'),
@@ -215,6 +346,7 @@ class EmailAnalyzerService:
                 'message_id': headers.get('message_id'),
                 'return_path': headers.get('return_path'),
             },
+            'artifacts': artifacts,
             'authentication': {
                 'auth_results_raw': headers.get('auth_results'),
                 'header_claims': auth_analysis,
@@ -249,6 +381,29 @@ class EmailAnalyzerService:
                 # can explain the verdict instead of showing a bare number.
                 'factors': risk_factors,
             }
+        }
+
+    @staticmethod
+    def _build_conclusion(artifacts: Dict[str, Any]) -> Dict[str, Any]:
+        """Verbatim seven-field summary, projected from the artifact block.
+
+        Values are the artifacts' raw `value` fields, so this reports exactly
+        what the message said. The normalised view lives in
+        `artifacts.checklist`.
+        """
+        def value(key: str) -> Any:
+            return (artifacts.get(key) or {}).get('value')
+
+        return {
+            'sender_address': value('sender'),
+            'subject': value('subject'),
+            # BCC recipients never appear in delivered headers, so this
+            # reflects only the visible To/Cc recipients.
+            'recipients': value('recipients'),
+            'date': value('date'),
+            'sending_server_ip': (artifacts.get('sending_server') or {}).get('ip'),
+            'reverse_dns': value('reverse_dns'),
+            'reply_to': value('reply_to'),
         }
 
     def _apply_yara(
@@ -312,6 +467,9 @@ class EmailAnalyzerService:
         dkim_selector: Optional[str],
         attachment_hashes: Optional[List[str]] = None,
         raw_bytes: Optional[bytes] = None,
+        *,
+        artifacts: Optional[Dict[str, Any]] = None,
+        spf_mail_from: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run all network lookups concurrently.
 
@@ -327,8 +485,6 @@ class EmailAnalyzerService:
                 jobs['whois'] = (self.whois_service.lookup, (sender_domain,))
         if dkim_domain and dkim_selector:
             jobs['dkim'] = (self.dns_checker.check_dkim, (dkim_domain, dkim_selector))
-        if sender_ip:
-            jobs['reverse_dns'] = (self.dns_checker.reverse_dns, (sender_ip,))
         if self.ip_reputation and sender_ip:
             jobs['abuse'] = (self.ip_reputation.check_ip, (sender_ip,))
         if self.virustotal and attachment_hashes:
@@ -338,6 +494,35 @@ class EmailAnalyzerService:
                 self.auth_verifier.verify,
                 (raw_bytes, sender_domain),
             )
+
+        server = (artifacts or {}).get('sending_server') or {}
+        enrich_ip = server.get('enriched_ip') or sender_ip
+        if enrich_ip:
+            if self.enable_reverse_dns:
+                # One job serves both the conclusion hostname and the FCrDNS
+                # verdict; the two share a PTR cache entry underneath.
+                jobs['rdns'] = (self.dns_checker.reverse_dns_details, (enrich_ip,))
+            if self.ip_intel:
+                jobs['ip_intel'] = (self.ip_intel.lookup, (enrich_ip,))
+            if self.spf_advisor and self.spf_advisor.available:
+                # partial() with an empty args tuple fits the existing
+                # executor.submit(fn, *args) dispatch without changing it.
+                jobs['spf_advisory'] = (
+                    partial(
+                        self.spf_advisor.evaluate,
+                        ip=enrich_ip,
+                        mail_from=spf_mail_from,
+                        helo=server.get('helo_claimed'),
+                        mail_from_source=(
+                            'return_path_header'
+                            if (artifacts or {}).get('return_path', {}).get('address')
+                            else 'from_header'
+                        ),
+                    ),
+                    (),
+                )
+        if self.enable_mx_lookup and sender_domain:
+            jobs['mx'] = (self.dns_checker.get_mx_records, (sender_domain,))
 
         results: Dict[str, Any] = {}
         if not jobs:
@@ -363,6 +548,133 @@ class EmailAnalyzerService:
             executor.shutdown(wait=False, cancel_futures=True)
 
         return results
+
+    def _merge_artifact_enrichment(
+        self,
+        artifacts: Dict[str, Any],
+        lookups: Dict[str, Any],
+        sender_domain: Optional[str],
+    ) -> None:
+        """Fold live lookup results into the artifact block.
+
+        Sets an explicit status for every enrichment source so the UI never
+        shows a blank field without saying why it is blank.
+        """
+        try:
+            server = artifacts.get('sending_server') or {}
+            enrichment = server.setdefault('enrichment', {})
+            status = artifacts.setdefault('enrichment_status', {})
+            has_ip = bool(server.get('enriched_ip'))
+
+            # -- reverse DNS ------------------------------------------------
+            rdns = lookups.get('rdns')
+            if not self.enable_reverse_dns:
+                status['reverse_dns'] = 'disabled'
+            elif not has_ip:
+                status['reverse_dns'] = 'skipped_no_public_ip'
+            elif rdns is None:
+                status['reverse_dns'] = 'error'
+            else:
+                status['reverse_dns'] = (
+                    'error' if rdns.get('fcrdns') == 'lookup_failed' else 'ok'
+                )
+
+            reverse_artifact = artifacts.get('reverse_dns') or {}
+            if rdns:
+                helo = server.get('helo_claimed')
+                ptr_name = rdns.get('ptr_name')
+                matches = None
+                if helo and ptr_name:
+                    matches = registered_domain(ptr_name) == registered_domain(helo)
+
+                enrichment['reverse_dns'] = {
+                    'trust': 'observed',
+                    'source': 'live_dns',
+                    'ptr': rdns.get('ptr', []),
+                    'ptr_name': ptr_name,
+                    'forward_ips': rdns.get('forward_ips', {}),
+                    'fcrdns': rdns.get('fcrdns'),
+                    'ptr_matches_helo': matches,
+                    # The PTR half is observed but the HELO half is copied out
+                    # of a forgeable Received header, so the comparison is only
+                    # as trustworthy as its weakest input. Shown, never scored.
+                    'ptr_helo_comparison_trust': 'header_claim',
+                    'checked_at': rdns.get('checked_at'),
+                }
+                reverse_artifact['value'] = ptr_name
+                reverse_artifact['status'] = rdns.get('fcrdns')
+                reverse_artifact['fcrdns'] = rdns.get('fcrdns')
+                reverse_artifact['forward_ips'] = rdns.get('forward_ips', {})
+                reverse_artifact['helo_claimed'] = helo
+                reverse_artifact['ptr_matches_helo'] = matches
+
+                flags = []
+                if rdns.get('fcrdns') == 'fail':
+                    flags.append('fcrdns_fail')
+                elif rdns.get('fcrdns') == 'no_ptr':
+                    flags.append('no_ptr_record')
+                if matches is False:
+                    flags.append('ptr_helo_mismatch')
+                reverse_artifact['flags'] = flags
+            else:
+                reverse_artifact['status'] = status.get('reverse_dns', 'unavailable')
+                reverse_artifact['flags'] = []
+            artifacts['reverse_dns'] = reverse_artifact
+
+            # -- ASN / RDAP -------------------------------------------------
+            ip_intel = lookups.get('ip_intel')
+            if self.ip_intel is None:
+                status['ip_intel'] = 'disabled'
+            elif not has_ip:
+                status['ip_intel'] = 'skipped_no_public_ip'
+            elif ip_intel is None:
+                status['ip_intel'] = 'unavailable'
+            else:
+                status['ip_intel'] = 'ok'
+                enrichment['ip_intel'] = ip_intel
+
+            # -- MX ---------------------------------------------------------
+            mx = lookups.get('mx')
+            sender_artifact = artifacts.get('sender') or {}
+            if not self.enable_mx_lookup:
+                status['mx'] = 'disabled'
+            elif not sender_domain:
+                status['mx'] = 'skipped_no_sender_domain'
+            else:
+                status['mx'] = 'ok' if mx else 'unavailable'
+                sender_artifact['enrichment'] = {
+                    'trust': 'observed', 'source': 'live_dns', 'mx': mx or [],
+                }
+                if not mx:
+                    sender_artifact.setdefault('flags', []).append(
+                        'sender_domain_has_no_mx'
+                    )
+
+            # -- advisory SPF ------------------------------------------------
+            advisory = artifacts.setdefault('authentication_advisory', {})
+            spf = lookups.get('spf_advisory')
+            if self.spf_advisor is None:
+                status['spf_advisory'] = 'disabled'
+                advisory['spf'] = None
+            elif not self.spf_advisor.available:
+                status['spf_advisory'] = 'unavailable'
+                advisory['spf'] = None
+            elif not has_ip:
+                status['spf_advisory'] = 'skipped_no_public_ip'
+                advisory['spf'] = None
+            elif spf is None:
+                status['spf_advisory'] = 'error'
+                advisory['spf'] = None
+            else:
+                status['spf_advisory'] = 'ok'
+                advisory['spf'] = spf
+
+            artifacts['checklist'] = ArtifactExtractorService._build_checklist(artifacts)
+            artifacts['flags'] = collect_flags(artifacts)
+        except Exception as exc:
+            logger.warning(
+                '[EmailAnalyzerService] artifact enrichment merge failed: %s', exc
+            )
 
     def _analyze_authentication(self, auth_results: str) -> Dict[str, Any]:
         """Parse untrusted Authentication-Results claims for display only."""
@@ -417,7 +729,9 @@ class EmailAnalyzerService:
         url_analysis: Dict[str, Any],
         attachment_analysis: Dict[str, Any],
         whois_data: Optional[Dict[str, Any]] = None,
-        verification: Optional[Dict[str, Any]] = None
+        verification: Optional[Dict[str, Any]] = None,
+        *,
+        artifacts: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, str]]:
         """Detect suspicious indicators"""
         suspicions = []
@@ -489,6 +803,15 @@ class EmailAnalyzerService:
                     f'"{attachment.get("filename", "attachment")}" as malicious ({label})'
                 )
 
+        # Artifact findings. Reply-To and Return-Path mismatches are already
+        # reported above, so they are skipped here rather than duplicated.
+        for flag in (artifacts or {}).get('flags', []):
+            entry = ARTIFACT_SUSPICION_MESSAGES.get(flag.get('code', ''))
+            if not entry:
+                continue
+            category, message = entry
+            add_suspicion(category, flag.get('severity', 'info'), message)
+
         return suspicions
 
     def _calculate_risk_score(
@@ -501,7 +824,9 @@ class EmailAnalyzerService:
         suspicions: List[Dict[str, str]],
         whois_data: Optional[Dict[str, Any]] = None,
         sender_domain: Optional[str] = None,
-        verification: Optional[Dict[str, Any]] = None
+        verification: Optional[Dict[str, Any]] = None,
+        *,
+        artifacts: Optional[Dict[str, Any]] = None,
     ) -> tuple:
         """Calculate the risk score (0-100), level, whitelist flag, and the
         ordered breakdown of factors that produced the score.
@@ -522,6 +847,29 @@ class EmailAnalyzerService:
                     'severity': severity,
                     'detail': detail,
                 })
+
+        # Artifact evidence, capped so header forensics can never dominate
+        # the verdict on its own. Only observed and computed flags appear in
+        # ARTIFACT_SCORE_POINTS, so nothing here is forgeable. Each scored
+        # flag is registered as a factor, because `factors` is what the UI
+        # shows as the reason behind the number — points added without one
+        # would leave the verdict partly unexplained.
+        artifact_budget = ARTIFACT_SCORE_CAP
+        for flag in (artifacts or {}).get('flags', []):
+            code = flag.get('code', '')
+            points = ARTIFACT_SCORE_POINTS.get(code, 0)
+            if not points or artifact_budget <= 0:
+                continue
+            points = min(points, artifact_budget)
+            artifact_budget -= points
+            score += points
+            entry = ARTIFACT_SUSPICION_MESSAGES.get(code)
+            add_factor(
+                entry[1] if entry else code,
+                points,
+                flag.get('severity', 'medium'),
+                f"{flag.get('trust', 'computed')} signal from header artifacts",
+            )
 
         # Authentication-Results header claims are deliberately not scored.
 

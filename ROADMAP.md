@@ -42,7 +42,13 @@ See `RELEASE_CHECKLIST.md` for the executable checklist.
 
 - Multiple DKIM-signature verification with per-signature results.
 - Optional trusted-MTA ingestion format carrying SMTP peer IP, envelope sender
-  and authenticated delivery metadata for real SPF/DMARC evaluation.
+  and authenticated delivery metadata for real SPF/DMARC evaluation. This is
+  the real fix that the advisory SPF re-evaluation only approximates, and the
+  only way a reverse-DNS-versus-HELO comparison could become scoreable.
+- Watch item: `pyspf` calls `dns.resolver.query()`, which dnspython has
+  deprecated. The import is guarded, so a removal in dnspython 3.x would
+  disable advisory SPF rather than break analyses, but it needs replacing.
+- Refresh path for the bundled freemail/disposable domain lists.
 - A sanitized regression corpus with machine-readable expected findings.
 - Authenticated multi-user deployments and per-tenant quotas.
 - Structured telemetry that remains off by default and contains no email data.

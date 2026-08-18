@@ -14,6 +14,8 @@ and malicious-email indicators.
 ## What it does
 
 - Parses EML and Outlook MSG files.
+- Extracts the analyst triage checklist as structured artifacts and enriches it
+  with reverse DNS, ASN and registry data (see below).
 - Checks suspicious URLs, IDN/homograph indicators and displayed-link mismatch.
 - Inspects attachment names, magic bytes, hashes and ZIP metadata without
   extracting archives.
@@ -22,7 +24,55 @@ and malicious-email indicators.
   VirusTotal.
 - Looks up SPF, DKIM and DMARC DNS records and domain-registration data via RDAP.
 - Independently verifies DKIM when raw MIME bytes are available.
-- Provides an English/Hebrew interface, JSON export and printable reports.
+- Provides an English/Hebrew interface, JSON export, printable reports and a
+  copy-for-ticket artifact block.
+
+## Artifacts and enrichment
+
+Every analysis returns an `artifacts` block covering the fields an analyst
+records for a reported message:
+
+| Artifact | Enrichment |
+|---|---|
+| Sender address | Display-name spoofing, punycode/homograph, freemail and disposable classification, optional MX |
+| Subject line | Encoded-word charsets, bidi overrides, zero-width characters, reply prefix without thread headers |
+| Recipients | To and Cc split out, plus BCC delivery inferred from `Delivered-To` and friends |
+| Date + time | Normalised to UTC, compared against the `Received` chain for skew and backdating |
+| Sending server IP | Announcing ASN, BGP prefix, allocation country and registry (Team Cymru), registry network object and abuse contact (RDAP) |
+| Reverse DNS | PTR plus forward confirmation (FCrDNS), and comparison against the claimed HELO name |
+| Reply-To | Mismatch against the sender's registered domain, freemail reply target |
+
+All of it is free and keyless: Team Cymru answers over plain DNS, so ASN data
+still resolves in deployments where outbound HTTPS is restricted, and a missing
+RDAP answer is treated as normal rather than an error. Each source reports an
+`enrichment_status` (`ok`, `disabled`, `skipped_no_public_ip`, `unavailable`,
+`error`) so a blank field always says why it is blank.
+
+### What gets scored
+
+Every artifact and flag carries a `trust` value:
+
+| `trust` | Meaning | Scored |
+|---|---|---|
+| `header_claim` | Read from the uploaded file; an attacker controls it | No |
+| `computed` | A deterministic property *of* that claim — script mixing, bidi overrides, self-contradictory timestamps | Yes |
+| `observed` | Re-derived from live DNS or RDAP at analysis time | Yes |
+
+The rule is that a scored signal must be one an attacker cannot erase by
+editing headers. So a failed FCrDNS check counts, because it is re-queried from
+DNS; a homoglyph sender domain counts, because choosing that string is itself
+the evidence. A mismatch between reverse DNS and the claimed HELO name is the
+sharpest new indicator here and is deliberately **not** scored: the PTR half is
+observed, but the HELO half is copied out of a forgeable `Received` header.
+Artifact evidence is capped so header forensics cannot dominate a verdict, and
+can only ever raise a score, never lower one.
+
+Advisory SPF (`ENABLE_SPF_ADVISORY`, off by default) re-evaluates SPF against
+the IP the `Received` chain claims and the `Return-Path` it claims. Both inputs
+are attacker-controlled — forging a hop that names a legitimate provider
+manufactures a `pass` — so the result is display-only, lives under
+`artifacts.authentication_advisory` rather than `authentication`, and never
+affects the risk score.
 
 ## Authentication trust model
 
@@ -136,6 +186,13 @@ requests temporarily. Optional lookups disclose limited indicators:
 | RDAP servers | Sender domain |
 | AbuseIPDB | Header-derived public IP and the configured API key |
 | VirusTotal | SHA-256 attachment hashes and the configured API key; not attachment bytes |
+| Reverse DNS | Header-derived public IP, as a PTR query |
+| Team Cymru (`asn.cymru.com`) | Header-derived public IP, encoded in the DNS query name |
+| RDAP servers (IP) | Header-derived public IP |
+
+The header-derived IP is often your own infrastructure rather than a suspected
+sender's. See [PRIVACY.md](PRIVACY.md) before enabling these in an environment
+where your mail topology is sensitive.
 
 See [PRIVACY.md](PRIVACY.md) for the full model and instructions for an offline
 deployment.

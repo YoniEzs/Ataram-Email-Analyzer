@@ -5,11 +5,14 @@ Analyzes URLs found in emails for suspicious characteristics
 
 import re
 import logging
-import unicodedata
 import urllib.parse
 from typing import List, Dict, Any, Optional
 
-import tldextract
+from app.utils.domains import (
+    is_homograph_label as _is_homograph_label,
+    registered_domain as _registered_domain,
+    registered_domain_and_suffix as _registered_domain_and_suffix,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,70 +24,6 @@ except ImportError:
 
 # Trailing punctuation that belongs to surrounding prose, not the URL itself
 _TRAILING_JUNK = re.compile(r'[.,;:!?)>\]]+$')
-
-# Offline PSL extractor — uses the bundled Public Suffix List snapshot,
-# never fetches over the network at runtime.
-_tld_extract = tldextract.TLDExtract(suffix_list_urls=())
-
-
-def _registered_domain(host: str) -> str:
-    """PSL-aware registered domain (example.co.uk stays example.co.uk)."""
-    if not host:
-        return ""
-    ext = _tld_extract(host.lower())
-    return ext.top_domain_under_public_suffix or host.lower()
-
-
-# Cyrillic letters that render (near-)identically to Latin ones — the raw
-# material of homograph attacks like "pаypal.com".
-_CYRILLIC_CONFUSABLES = set('аеорсухіјѕԛԝьӏԁɡ')
-
-_SCRIPT_PREFIXES = ('LATIN', 'CYRILLIC', 'GREEK', 'HEBREW', 'ARABIC')
-
-
-def _label_scripts(label: str) -> set:
-    """Return the set of Unicode scripts used by letters in a label."""
-    scripts = set()
-    for ch in label:
-        if not ch.isalpha():
-            continue
-        if ch.isascii():
-            scripts.add('LATIN')
-            continue
-        name = unicodedata.name(ch, '')
-        for prefix in _SCRIPT_PREFIXES:
-            if name.startswith(prefix):
-                scripts.add(prefix)
-                break
-        else:
-            scripts.add('OTHER')
-    return scripts
-
-
-def _is_homograph_label(label: str) -> bool:
-    """Detect labels crafted to impersonate Latin domain names."""
-    if label.startswith('xn--'):
-        try:
-            label = label.encode('ascii').decode('idna')
-        except Exception:
-            return False
-
-    scripts = _label_scripts(label)
-
-    # Mixing Latin with Cyrillic/Greek in one label is the classic attack;
-    # no legitimate registry allows it.
-    if 'LATIN' in scripts and scripts & {'CYRILLIC', 'GREEK'}:
-        return True
-
-    # An all-Cyrillic label built only from Latin-lookalike letters
-    # (e.g. "аррӏе") is visually indistinguishable from Latin.
-    if scripts == {'CYRILLIC'}:
-        letters = [ch for ch in label if ch.isalpha()]
-        if letters and all(ch in _CYRILLIC_CONFUSABLES for ch in letters):
-            return True
-
-    return False
-
 
 class URLAnalyzerService:
     """Service for analyzing URLs in email content"""
@@ -159,9 +98,7 @@ class URLAnalyzerService:
 
         suffix = ""
         if domain:
-            ext = _tld_extract(domain.lower())
-            registered_domain = ext.top_domain_under_public_suffix or domain.lower()
-            suffix = ext.suffix
+            registered_domain, suffix = _registered_domain_and_suffix(domain)
 
         if registered_domain in self.URL_SHORTENERS:
             issues.append('shortened_url')

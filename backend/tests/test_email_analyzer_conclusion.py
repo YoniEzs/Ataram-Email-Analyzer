@@ -1,4 +1,9 @@
-"""Tests for the conclusion (official artifacts) section, including reverse DNS."""
+"""Tests for the conclusion (official artifacts) section, including reverse DNS.
+
+`conclusion` is projected from the `artifacts` block, so these also pin that
+the projection reports values verbatim as received. The normalised view lives
+in `artifacts.checklist` and is covered by test_artifacts_contract.py.
+"""
 
 from app.services.email_analyzer import EmailAnalyzerService
 
@@ -39,7 +44,7 @@ def test_conclusion_contains_official_artifacts(monkeypatch):
     monkeypatch.setattr(
         analyzer,
         "_run_external_lookups",
-        lambda *args, **kwargs: {"reverse_dns": "dns.google"},
+        lambda *args, **kwargs: {"rdns": {"ptr_name": "dns.google", "fcrdns": "pass"}},
     )
 
     result = analyzer.analyze(_parsed())
@@ -57,6 +62,12 @@ def test_conclusion_contains_official_artifacts(monkeypatch):
     assert result["sender_info"]["reverse_dns"] == "dns.google"
     assert result["sender_info"]["ip"] == "8.8.8.8"
 
+    # The projection must not drift from the block it is derived from.
+    checklist = result["artifacts"]["checklist"]
+    assert checklist["sending_server_ip"] == conclusion["sending_server_ip"]
+    assert checklist["reverse_dns"] == conclusion["reverse_dns"]
+    assert checklist["subject"] == conclusion["subject"]
+
 
 def test_reverse_dns_lookup_is_requested_for_the_sender_ip():
     analyzer = _analyzer()
@@ -64,7 +75,7 @@ def test_reverse_dns_lookup_is_requested_for_the_sender_ip():
 
     def fake_lookups(sender_domain, sender_ip, dkim_domain, dkim_selector, **kwargs):
         captured["sender_ip"] = sender_ip
-        return {"reverse_dns": None}
+        return {"rdns": None}
 
     analyzer._run_external_lookups = fake_lookups
     result = analyzer.analyze(_parsed())
