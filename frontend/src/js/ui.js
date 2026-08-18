@@ -20,7 +20,8 @@ class UIController {
             printReportBtn: document.getElementById('printReportBtn'),
             historySection: document.getElementById('historySection'),
             historyList: document.getElementById('historyList'),
-            clearHistoryBtn: document.getElementById('clearHistoryBtn')
+            clearHistoryBtn: document.getElementById('clearHistoryBtn'),
+            themeToggle: document.getElementById('themeToggle')
         };
 
         this.currentFile = null;
@@ -309,6 +310,45 @@ class UIController {
     }
 
     /**
+     * Initialize the light/dark theme toggle.
+     *
+     * With no explicit choice the page follows the OS preference (handled in
+     * CSS). Clicking the toggle picks the opposite of whatever is currently
+     * showing and persists it to localStorage.
+     */
+    initThemeToggle() {
+        const toggle = this.elements.themeToggle;
+        if (!toggle) return;
+
+        const systemPrefersDark = () =>
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        const currentTheme = () => {
+            const explicit = document.documentElement.getAttribute('data-theme');
+            if (explicit === 'light' || explicit === 'dark') return explicit;
+            return systemPrefersDark() ? 'dark' : 'light';
+        };
+
+        const applyLabel = () => {
+            const next = currentTheme() === 'dark' ? t('Switch to light theme') : t('Switch to dark theme');
+            toggle.setAttribute('aria-label', next);
+            toggle.setAttribute('title', next);
+        };
+
+        applyLabel();
+        this._applyThemeLabel = applyLabel;
+
+        toggle.addEventListener('click', () => {
+            const next = currentTheme() === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            try {
+                localStorage.setItem('emailAnalyzer_theme', next);
+            } catch (e) { /* localStorage unavailable */ }
+            applyLabel();
+        });
+    }
+
+    /**
      * Initialize the print-report button (browser print → Save as PDF)
      */
     initPrintButton() {
@@ -368,7 +408,7 @@ class UIController {
         const history = this.loadHistory();
 
         if (history.length === 0) {
-            list.innerHTML = `<p style="text-align:center; color:var(--text-muted);">${this._escapeHtml(t('No previous analyses.'))}</p>`;
+            list.innerHTML = `<p class="history-empty">${this._escapeHtml(t('No previous analyses.'))}</p>`;
             section.style.display = 'none';
             return;
         }
@@ -380,13 +420,13 @@ class UIController {
             const cls = levelClass[entry.risk_level] || 'info';
             const date = new Date(entry.analyzed_at).toLocaleString();
             return `
-                <div style="display:flex; align-items:center; gap:0.75rem; padding:0.6rem 0; border-bottom:1px solid var(--border-color);">
+                <div class="history-item">
                     <span class="pill ${cls}" style="min-width:70px; text-align:center;">${this._escapeHtml(t(entry.risk_level || 'unknown'))}</span>
-                    <div style="flex:1; min-width:0;">
-                        <div style="font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${this._escapeHtml(entry.filename)}</div>
-                        <div style="font-size:0.75rem; color:var(--text-muted);">${date}</div>
+                    <div class="history-item-main">
+                        <div class="history-item-name">${this._escapeHtml(entry.filename)}</div>
+                        <div class="history-item-date">${date}</div>
                     </div>
-                    <span style="font-weight:600; color:var(--text-secondary);">${entry.risk_score}/100</span>
+                    <span class="history-item-score">${entry.risk_score}/100</span>
                 </div>
             `;
         }).join('');

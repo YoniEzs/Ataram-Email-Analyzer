@@ -1,6 +1,7 @@
 /**
  * Browser smoke test: loads the UI, exercises the language toggle (en/he +
- * RTL), and renders a fake analysis result through the results renderer.
+ * RTL) and the theme toggle, and renders a fake analysis result through the
+ * results renderer (summary, conclusion, factors, tabs).
  *
  * Run:
  *   cd frontend/src && python3 -m http.server 8765 &
@@ -42,28 +43,73 @@ await page.waitForTimeout(300);
 expect(await page.evaluate(() => document.documentElement.lang) === 'en', 'default language is en');
 expect((await page.locator('.upload-header h2').textContent()).trim() === 'Analyze Email', 'english heading');
 
+// Theme toggle flips the explicit data-theme attribute.
+const themeBefore = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+await page.click('#themeToggle');
+await page.waitForTimeout(150);
+const themeAfter = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+expect((themeAfter === 'dark' || themeAfter === 'light') && themeAfter !== themeBefore, 'theme toggle switches theme');
+
 await page.click('#langToggle');
 await page.waitForTimeout(200);
 expect(await page.evaluate(() => document.documentElement.dir) === 'rtl', 'hebrew switches to rtl');
 expect((await page.locator('.upload-header h2').textContent()).trim() === 'ניתוח מייל', 'hebrew heading');
 
-const cardTitles = await page.evaluate(() => {
+const render = await page.evaluate(() => {
     window.lastAnalysisResult = {
-        risk_assessment: { level: 'high', score: 62, verdict: 'SUSPICIOUS - Exercise extreme caution', whitelist_applied: false },
+        risk_assessment: {
+            level: 'high', score: 62, verdict: 'SUSPICIOUS - Exercise extreme caution', whitelist_applied: false,
+            factors: [
+                { label: 'Sender IP reputation', points: 20, severity: 'critical', detail: 'AbuseIPDB confidence 80%' },
+                { label: 'Suspicious URLs', points: 10, severity: 'high', detail: '2 flagged link(s)' },
+            ],
+        },
+        conclusion: {
+            sender_address: 'a@b.com', subject: 'test', recipients: 'c@d.com',
+            date: 'Mon, 09 Mar 2026 09:00:00 +0000',
+            sending_server_ip: '8.8.8.8', reverse_dns: 'dns.google', reply_to: 'r@b.com',
+        },
         suspicions: [{ category: 'authentication', severity: 'high', message: 'SPF check failed: fail' }],
         headers: { sender: 'a@b.com', subject: 'test' },
         authentication: { auth_analysis: { spf: 'fail' } },
-        sender_info: { domain: 'b.com' },
+        sender_info: { domain: 'b.com', ip: '8.8.8.8', reverse_dns: 'dns.google' },
         content: { urgent_phrases: ['urgent'] },
         urls: { total_count: 0 },
         attachments: { total_count: 0 },
         routing: { hops: ['hop1'], hop_count: 1 },
         routing_forensics: { hop_count: 1, public_ips: [], originating_ip: null, timezone_offset: null },
+        metadata: { filename: 'sample.eml' },
     };
     window.resultsRenderer.render(window.lastAnalysisResult);
-    return Array.from(document.querySelectorAll('.result-card-title')).map(e => e.textContent.trim());
+    const conclusionCard = document.querySelector('.conclusion-card');
+    return {
+        cardTitles: Array.from(document.querySelectorAll('.result-card-title')).map(e => e.textContent.trim()),
+        conclusionText: conclusionCard ? conclusionCard.textContent : '',
+        hasVerdict: !!document.querySelector('.verdict-card'),
+        scoreText: (document.querySelector('.score-num') || {}).textContent || '',
+        factorCount: document.querySelectorAll('.factor-item').length,
+        tabCount: document.querySelectorAll('.tab-btn').length,
+    };
 });
-expect(cardTitles.includes('כותרות המייל'), 'results render in hebrew');
+expect(render.cardTitles.includes('כותרות המייל'), 'results render in hebrew');
+expect(render.cardTitles.includes('סיכום'), 'conclusion card renders in hebrew');
+expect(render.conclusionText.includes('8.8.8.8'), 'conclusion shows sending server IP');
+expect(render.conclusionText.includes('dns.google'), 'conclusion shows reverse DNS');
+expect(render.hasVerdict, 'verdict summary card renders');
+expect(render.scoreText === '62', 'score ring shows the score');
+expect(render.factorCount === 2, 'risk factors render');
+expect(render.tabCount >= 5, 'detail tabs render');
+
+// Switching tabs reveals a previously hidden panel.
+const tabSwitch = await page.evaluate(() => {
+    const btns = document.querySelectorAll('.tab-btn');
+    const last = btns[btns.length - 1];
+    last.click();
+    const idx = last.getAttribute('data-tab');
+    const panel = document.querySelector(`.tab-panel[data-tab="${idx}"]`);
+    return panel && panel.classList.contains('active') && last.classList.contains('active');
+});
+expect(tabSwitch, 'clicking a tab activates its panel');
 
 await page.click('#langToggle');
 await page.waitForTimeout(200);

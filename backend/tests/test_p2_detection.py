@@ -240,7 +240,7 @@ def test_vt_malicious_forces_critical_score():
             'virustotal': {'known': True, 'malicious': 12},
         }],
     }
-    score, level, _ = service._calculate_risk_score(
+    score, level, _, _ = service._calculate_risk_score(
         auth_analysis={'spf': 'pass'},
         abuse_data=None,
         url_analysis={'suspicious_count': 0},
