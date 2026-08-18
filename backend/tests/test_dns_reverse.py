@@ -34,11 +34,15 @@ class _Rdata:
 
 
 def fake_resolver(mapping):
-    """Resolve from a {(name_suffix, rdtype): [values]} mapping."""
+    """Resolve from a {(name_suffix, rdtype): [values]} mapping.
+
+    A missing entry raises NoAnswer — an *authoritative* empty answer. Tests
+    for resolver outages raise a generic DNSException explicitly.
+    """
     def _resolve(name, rdtype, lifetime=None):
         key = (str(name).rstrip('.').lower(), rdtype)
         if key not in mapping:
-            raise dns.exception.DNSException('no answer')
+            raise dns.resolver.NoAnswer()
         return [_Rdata(v) for v in mapping[key]]
     return _resolve
 
@@ -65,17 +69,26 @@ def test_fcrdns_fails_when_forward_lookup_points_elsewhere():
     assert result['fcrdns'] == 'fail'
 
 
-def test_absent_ptr_yields_no_ptr_and_scores_nothing():
-    """A resolver failure is reported as no_ptr, not as an FCrDNS failure.
-
-    The shared PTR cache keeps one negative sentinel for both cases, so the
-    two are indistinguishable here. That is the safe direction: no_ptr is
-    worth zero points, whereas a spurious fail would inflate the score during
-    a resolver outage.
-    """
+def test_authoritative_absent_ptr_yields_no_ptr():
+    """NoAnswer/NXDOMAIN mean the address genuinely has no PTR record."""
     with patch('app.services.dns_checker.dns.resolver.resolve', fake_resolver({})):
         result = DNSCheckerService(timeout=1).reverse_dns_details(PUBLIC_IP)
     assert result['fcrdns'] == 'no_ptr'
+    assert result['ptr_name'] is None
+
+
+def test_resolver_outage_yields_lookup_failed_not_evidence():
+    """A timeout must never masquerade as a fact about the sender.
+
+    no_ptr is a (low) observation; lookup_failed is an infrastructure state.
+    Conflating them would let a resolver outage add observations to a report.
+    """
+    with patch(
+        'app.services.dns_checker.dns.resolver.resolve',
+        side_effect=dns.exception.Timeout(),
+    ):
+        result = DNSCheckerService(timeout=1).reverse_dns_details(PUBLIC_IP)
+    assert result['fcrdns'] == 'lookup_failed'
     assert result['ptr_name'] is None
 
 
@@ -151,8 +164,21 @@ def test_mx_records_are_returned_as_hostnames():
     assert result == ['mx1.sender.example', 'mx2.sender.example']
 
 
-def test_missing_mx_returns_none():
+def test_authoritative_missing_mx_returns_empty_list():
+    """No MX records is evidence ([]); only a resolver failure is None.
+
+    The analyzer scores sender_domain_has_no_mx from [], so the distinction is
+    what keeps a DNS outage from fabricating +4 points on a clean message.
+    """
     with patch('app.services.dns_checker.dns.resolver.resolve', fake_resolver({})):
+        assert DNSCheckerService(timeout=1).get_mx_records('sender.example') == []
+
+
+def test_mx_resolver_failure_returns_none():
+    with patch(
+        'app.services.dns_checker.dns.resolver.resolve',
+        side_effect=dns.exception.Timeout(),
+    ):
         assert DNSCheckerService(timeout=1).get_mx_records('sender.example') is None
 
 

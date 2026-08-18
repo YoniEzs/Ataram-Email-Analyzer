@@ -34,3 +34,7 @@
 *.woff2 binary
 *.ttf binary
 *.eot binary
+
+# Email samples are byte-exact test data - RFC 5322 requires CRLF
+*.eml -text
+*.msg -text

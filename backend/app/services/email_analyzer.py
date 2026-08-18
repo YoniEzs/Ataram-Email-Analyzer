@@ -113,6 +113,10 @@ ARTIFACT_SUSPICION_MESSAGES: Dict[str, Tuple[str, str]] = {
     'freemail_reply_target': (
         'reply_to', 'Reply-To points at consumer webmail while the sender does not'
     ),
+    'freemail_return_path': (
+        'return_path',
+        'Return-Path points at consumer webmail while the sender does not',
+    ),
     'message_id_domain_differs_from_sender': (
         'headers', 'Message-ID domain differs from the sender domain'
     ),
@@ -248,9 +252,7 @@ class EmailAnalyzerService:
 
         # Offline artifacts first: the lookups below need the originating IP,
         # the claimed HELO and the envelope sender it derives.
-        artifacts = self.artifact_extractor.extract(
-            headers, sender_domain=sender_domain
-        )
+        artifacts = self.artifact_extractor.extract(headers)
         spf_mail_from = artifacts.pop('_spf_mail_from', None)
 
         # Local analysis first (CPU only) — its outputs feed the lookups
@@ -307,7 +309,7 @@ class EmailAnalyzerService:
         )
 
         # Fold live lookups into the artifact block and refresh its flags.
-        self._merge_artifact_enrichment(artifacts, lookups, sender_domain)
+        self._merge_artifact_enrichment(artifacts, lookups, sender_domain, sender_ip)
 
         # Detect suspicions (now also checks domain age)
         suspicions = self._detect_suspicions(
@@ -554,6 +556,7 @@ class EmailAnalyzerService:
         artifacts: Dict[str, Any],
         lookups: Dict[str, Any],
         sender_domain: Optional[str],
+        sender_ip: Optional[str] = None,
     ) -> None:
         """Fold live lookup results into the artifact block.
 
@@ -564,7 +567,10 @@ class EmailAnalyzerService:
             server = artifacts.get('sending_server') or {}
             enrichment = server.setdefault('enrichment', {})
             status = artifacts.setdefault('enrichment_status', {})
-            has_ip = bool(server.get('enriched_ip'))
+            # Must mirror _run_external_lookups' fallback exactly: if a
+            # lookup actually ran, the status must never claim it was
+            # skipped — that is a privacy statement, not cosmetics.
+            has_ip = bool(server.get('enriched_ip') or sender_ip)
 
             # -- reverse DNS ------------------------------------------------
             rdns = lookups.get('rdns')
@@ -634,16 +640,22 @@ class EmailAnalyzerService:
                 enrichment['ip_intel'] = ip_intel
 
             # -- MX ---------------------------------------------------------
+            # get_mx_records is tri-state: a list of hosts, [] for an
+            # authoritative "no MX records", None for a resolver failure.
+            # Only the authoritative answer is evidence — flagging on None
+            # would let a DNS outage fabricate scored points.
             mx = lookups.get('mx')
             sender_artifact = artifacts.get('sender') or {}
             if not self.enable_mx_lookup:
                 status['mx'] = 'disabled'
             elif not sender_domain:
                 status['mx'] = 'skipped_no_sender_domain'
+            elif mx is None:
+                status['mx'] = 'unavailable'
             else:
-                status['mx'] = 'ok' if mx else 'unavailable'
+                status['mx'] = 'ok'
                 sender_artifact['enrichment'] = {
-                    'trust': 'observed', 'source': 'live_dns', 'mx': mx or [],
+                    'trust': 'observed', 'source': 'live_dns', 'mx': mx,
                 }
                 if not mx:
                     sender_artifact.setdefault('flags', []).append(

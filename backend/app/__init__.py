@@ -149,10 +149,16 @@ def _apply_security_headers(app: Flask) -> None:
     try:
         from flask_talisman import Talisman
 
+        style_src = ["'self'", 'https://fonts.googleapis.com']
+        # The desktop build serves the frontend from this process, and the
+        # frontend uses inline style attributes. Server deployments keep the
+        # strict policy: nginx serves the UI there, so this never applies.
+        if app.config.get('CSP_ALLOW_INLINE_STYLE'):
+            style_src.append("'unsafe-inline'")
         csp = {
             'default-src': ["'self'"],
             'script-src': ["'self'"],
-            'style-src': ["'self'", 'https://fonts.googleapis.com'],
+            'style-src': style_src,
             'font-src': ["'self'", 'https://fonts.gstatic.com'],
             'img-src': ["'self'", 'data:'],
             'connect-src': ["'self'"],

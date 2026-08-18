@@ -1,0 +1,75 @@
+# Run Ataram Email Analyzer from the published images - no source checkout
+# and no build step needed:
+#
+#   curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
+#   docker compose -f docker-compose.release.yml up
+#
+# Then open http://localhost:3000. Pin a version with ATARAM_VERSION=0.1.0-rc1.
+# Note: the ':latest' tag is only published for stable releases; while only
+# a release candidate exists, setting ATARAM_VERSION is required.
+# This file mirrors docker-compose.yml exactly, with images pulled from GHCR
+# instead of built locally.
+services:
+  redis:
+    image: redis:7-alpine
+    user: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /data:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    image: ghcr.io/yoniezs/ataram-email-analyzer/backend:${ATARAM_VERSION:-latest}
+    expose:
+      - "5000"
+    environment:
+      FLASK_ENV: production
+      FORCE_HTTPS: "false"
+      SECRET_KEY: "${SECRET_KEY:-}"
+      ABUSEIPDB_KEY: "${ABUSEIPDB_KEY:-}"
+      VIRUSTOTAL_API_KEY: "${VIRUSTOTAL_API_KEY:-}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
+      ENABLE_WHOIS: "${ENABLE_WHOIS:-true}"
+      ENABLE_ABUSEIPDB: "${ENABLE_ABUSEIPDB:-true}"
+      ENABLE_VIRUSTOTAL: "${ENABLE_VIRUSTOTAL:-false}"
+      REDIS_URL: redis://redis:6379/0
+      RATELIMIT_STORAGE_URI: redis://redis:6379/1
+      TRUST_PROXY_COUNT: "1"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 2.0
+
+  frontend:
+    image: ghcr.io/yoniezs/ataram-email-analyzer/frontend:${ATARAM_VERSION:-latest}
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0

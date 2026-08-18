@@ -97,6 +97,7 @@ const I18N_TRANSLATIONS = {
         'reply_to_differs_from_sender': 'כתובת המענה שונה מהשולח',
         'return_path_differs_from_sender': 'נתיב החזרה שונה מהשולח',
         'freemail_reply_target': 'המענה מופנה לדואר צרכני',
+        'freemail_return_path': 'נתיב החזרה מופנה לדואר צרכני',
         'future_dated': 'התאריך בעתיד',
         'implausibly_old': 'התאריך ישן באופן חריג',
         'unparseable_date': 'לא ניתן לפענח את התאריך',

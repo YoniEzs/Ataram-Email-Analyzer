@@ -8,17 +8,9 @@
     <meta name="author" content="Ataram Security">
     <title>Ataram Email Analyzer - Email Security Analysis</title>
 
-    <!-- Apply the saved theme before first paint to avoid a flash -->
-    <script>
-        (function () {
-            try {
-                var t = localStorage.getItem('emailAnalyzer_theme');
-                if (t === 'light' || t === 'dark') {
-                    document.documentElement.setAttribute('data-theme', t);
-                }
-            } catch (e) { /* localStorage unavailable */ }
-        })();
-    </script>
+    <!-- Apply the saved theme before first paint to avoid a flash.
+         External file (not inline) so the desktop build's CSP allows it. -->
+    <script src="js/theme-init.js"></script>
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">

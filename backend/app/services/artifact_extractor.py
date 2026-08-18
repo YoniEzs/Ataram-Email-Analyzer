@@ -443,8 +443,17 @@ def analyze_sending_server(
         if ip and ip not in chain:
             chain.append(ip)
 
-    # Oldest hop first == furthest from the recipient == the claimed origin.
-    origin_ip = chain[-1] if chain else None
+    # The origin is the first public IP scanning from the *oldest* hop —
+    # matching extract_sender_ip exactly, so the conclusion, sender_info and
+    # AbuseIPDB all describe the same address. Deriving it from the deduped
+    # newest-first chain is wrong when an IP repeats: [A, B, A] would dedup
+    # to [A, B] and misname the middle relay B as the origin.
+    origin_ip = None
+    for hop in reversed(hops):
+        ip = hop.get('from_ip')
+        if ip:
+            origin_ip = ip
+            break
     edge_ip = chain[0] if chain else None
 
     helo_claimed = None
@@ -486,7 +495,8 @@ def analyze_sending_server(
 
 
 def _analyze_address_artifact(
-    raw: str, source: str, sender: Dict[str, Any], mismatch_flag: str
+    raw: str, source: str, sender: Dict[str, Any], mismatch_flag: str,
+    freemail_flag: str,
 ) -> Dict[str, Any]:
     parsed = split_address(raw)
     classification = classify_domain(parsed['domain'])
@@ -505,7 +515,7 @@ def _analyze_address_artifact(
         and not sender.get('classification', {}).get('freemail')
         and sender_registered
     ):
-        flags.append('freemail_reply_target')
+        flags.append(freemail_flag)
 
     return {
         'value': raw or None,
@@ -552,17 +562,11 @@ class ArtifactExtractorService:
     """Builds the offline artifact block from parsed headers."""
 
     def __init__(
-        self,
-        *,
-        now: Optional[Callable[[], datetime]] = None,
-        max_addresses: int = MAX_ADDRESSES,
+        self, *, now: Optional[Callable[[], datetime]] = None
     ) -> None:
         self._now = now or (lambda: datetime.now(timezone.utc))
-        self.max_addresses = max_addresses
 
-    def extract(
-        self, headers: Dict[str, Any], *, sender_domain: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def extract(self, headers: Dict[str, Any]) -> Dict[str, Any]:
         """Extract every offline artifact. Never raises."""
         try:
             return self._extract(headers or {})
@@ -587,11 +591,11 @@ class ArtifactExtractorService:
         sending_server = analyze_sending_server(headers, hops)
         reply_to = _analyze_address_artifact(
             headers.get('reply_to') or '', 'Reply-To', sender,
-            'reply_to_differs_from_sender',
+            'reply_to_differs_from_sender', 'freemail_reply_target',
         )
         return_path = _analyze_address_artifact(
             headers.get('return_path') or '', 'Return-Path', sender,
-            'return_path_differs_from_sender',
+            'return_path_differs_from_sender', 'freemail_return_path',
         )
         message_id = analyze_message_id(headers, sender)
 
@@ -687,6 +691,7 @@ FLAG_METADATA: Dict[str, Dict[str, str]] = {
     'reply_to_differs_from_sender': {'severity': 'low', 'trust': 'header_claim'},
     'return_path_differs_from_sender': {'severity': 'medium', 'trust': 'header_claim'},
     'freemail_reply_target': {'severity': 'medium', 'trust': 'header_claim'},
+    'freemail_return_path': {'severity': 'medium', 'trust': 'header_claim'},
     'no_public_sender_ip': {'severity': 'low', 'trust': 'header_claim'},
     'x_originating_ip_disagrees_with_chain': {'severity': 'low', 'trust': 'header_claim'},
     'ptr_helo_mismatch': {'severity': 'medium', 'trust': 'header_claim'},

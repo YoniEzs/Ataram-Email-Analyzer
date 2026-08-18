@@ -26,6 +26,14 @@ This project follows Semantic Versioning after the first stable release.
 - Optional advisory SPF re-evaluation (`ENABLE_SPF_ADVISORY`, off by default).
 - Optional MX lookup for the sender domain (`ENABLE_MX_LOOKUP`).
 - Artifacts card in the UI and a copy-for-ticket Markdown export.
+- Desktop entry point (`ataram-analyzer` / `app.desktop`): one local process
+  serving UI and API on 127.0.0.1 via waitress, browser auto-opens.
+- pipx/PyPI packaging (`backend/pyproject.toml`) and a PyInstaller spec plus
+  release workflow producing Windows/macOS/Linux zips with checksums.
+- `docker-compose.release.yml` running the published GHCR images without a
+  source checkout or build step.
+- `samples/`: five synthetic emails with documented expected verdicts.
+- Static landing page for the project website under `site/`.
 
 ### Changed
 
@@ -39,6 +47,28 @@ This project follows Semantic Versioning after the first stable release.
   had drifted apart at 2.0 and 2.1 and are both 2.2.
 - The external-lookup deadline allows for reverse DNS, whose worst case is
   several sequential round-trips rather than one.
+- The theme bootstrap moved from an inline script to `js/theme-init.js`: the
+  desktop build serves the UI through Flask, whose CSP forbids inline scripts.
+  Inline style attributes are permitted only in the desktop build via the new
+  `CSP_ALLOW_INLINE_STYLE` flag; server CSP is unchanged.
+
+### Fixed
+
+- DNS answers are tri-state everywhere they can be scored: an authoritative
+  "no records" answer ([]) is evidence, a resolver failure (None) is not. A
+  DNS outage can no longer fabricate the scored no-MX flag or make a missing
+  PTR record look confirmed; reverse-DNS outages surface as an `error`
+  enrichment status instead of an observation.
+- The sending-server IP now always matches the oldest public Received hop;
+  previously a repeated IP in the chain could shift the origin (and all its
+  enrichment) onto a middle relay.
+- Enrichment statuses mirror the lookup batch's actual IP fallback, so a
+  lookup that ran is never reported as skipped.
+- A freemail Return-Path raises its own `freemail_return_path` flag instead
+  of misreporting a Reply-To that may not exist.
+- YARA rules resolve to the copy bundled inside the package for pip/pipx
+  installs; previously scanning was silently disabled there because the
+  config evaluates before any entry point can set environment variables.
 
 ### Security
 

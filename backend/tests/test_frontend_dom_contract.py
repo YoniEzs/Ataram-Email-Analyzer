@@ -31,6 +31,7 @@ REQUIRED_IDS = {
 }
 
 EXPECTED_SCRIPT_ORDER = [
+    "js/theme-init.js",
     "runtime-config.js",
     "js/i18n.js",
     "js/config.js",

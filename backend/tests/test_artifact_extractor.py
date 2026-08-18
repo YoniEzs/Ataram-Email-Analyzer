@@ -308,6 +308,41 @@ def test_oldest_public_hop_is_the_sending_server():
     assert server['enriched_ip'] == PUBLIC_IP
 
 
+def test_repeated_origin_ip_does_not_shift_to_a_middle_relay():
+    """Dedup regression: hops [A, B, A] must keep A as the origin.
+
+    The chain dedups newest-first to [A, B]; taking its last element would
+    misname the middle relay B as the sending server, diverging from
+    extract_sender_ip which scans from the oldest hop.
+    """
+    hop = (
+        b"Received: from edge.example (edge [1.1.1.1])"
+        b" by mx.company.example; Mon, 06 Jul 2026 09:00:20 +0000\r\n"
+        b"Received: from mid.example (mid [9.9.9.9])"
+        b" by edge.example; Mon, 06 Jul 2026 09:00:10 +0000\r\n"
+        b"Received: from origin.example (origin [1.1.1.1])"
+        b" by mid.example; Mon, 06 Jul 2026 09:00:00 +0000\r\n"
+    )
+    server = build(eml(hop=hop))['sending_server']
+    assert server['ip'] == '1.1.1.1'
+    assert server['enriched_ip'] == '1.1.1.1'
+    assert server['ip_chain'] == ['1.1.1.1', '9.9.9.9']
+
+
+def test_freemail_return_path_uses_its_own_flag_code():
+    """A freemail Return-Path must not raise the Reply-To flag: the analyst
+    reads these messages verbatim, and 'Reply-To points at consumer webmail'
+    is factually wrong when no Reply-To header exists."""
+    artifacts = build(
+        BASE_HOP
+        + b"From: Sender <sender@sender.com>\r\nTo: victim@company.example\r\n"
+        + b"Return-Path: <bounces@gmail.com>\r\n"
+        + b"Subject: x\r\nDate: Mon, 06 Jul 2026 09:00:00 +0000\r\n\r\nbody\r\n"
+    )
+    assert 'freemail_return_path' in codes(artifacts)
+    assert 'freemail_reply_target' not in codes(artifacts)
+
+
 def test_message_with_no_public_hop_is_flagged():
     hop = (
         b"Received: from localhost (localhost [127.0.0.1])"
