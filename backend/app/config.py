@@ -94,6 +94,20 @@ class Config:
         os.environ.get('ENABLE_AUTH_VERIFICATION', 'true').lower() == 'true'
     )
 
+    # Artifact enrichment. Reverse DNS and IP intelligence are on by default:
+    # both are cheap, keyless, and describe the sending address rather than the
+    # message. See PRIVACY.md — they do disclose the sending IP to third parties.
+    ENABLE_REVERSE_DNS = os.environ.get('ENABLE_REVERSE_DNS', 'true').lower() == 'true'
+    ENABLE_IP_RDAP = os.environ.get('ENABLE_IP_RDAP', 'true').lower() == 'true'
+    ENABLE_ASN_LOOKUP = os.environ.get('ENABLE_ASN_LOOKUP', 'true').lower() == 'true'
+    ENABLE_MX_LOOKUP = os.environ.get('ENABLE_MX_LOOKUP', 'false').lower() == 'true'
+    # Advisory SPF re-evaluation. Off by default: both of its inputs come from
+    # forgeable headers, so the result is display-only and never scored.
+    ENABLE_SPF_ADVISORY = (
+        os.environ.get('ENABLE_SPF_ADVISORY', 'false').lower() == 'true'
+    )
+    SPF_TIMEOUT = int(os.environ.get('SPF_TIMEOUT', 8))
+
     # HTTPS is normally terminated by the application or an upstream proxy.
     # Plain-HTTP local Compose deployments explicitly disable this.
     FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'true').lower() == 'true'

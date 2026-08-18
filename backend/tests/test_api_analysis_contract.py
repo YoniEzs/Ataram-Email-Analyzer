@@ -5,6 +5,7 @@ API contract tests for /api/analyze.
 from io import BytesIO
 
 from app.api import analysis as analysis_api
+from app.api.openapi import API_VERSION
 
 
 def test_analyze_response_includes_new_contract_fields(client, monkeypatch):
@@ -36,6 +37,20 @@ def test_analyze_response_includes_new_contract_fields(client, monkeypatch):
                 "urls": {"total_count": 0, "unique_count": 0, "suspicious_count": 0, "urls": []},
                 "attachments": {"total_count": 0, "suspicious_count": 0, "attachments": []},
                 "routing": {"hops": [], "hop_count": 0},
+                "artifacts": {
+                    "schema_version": 1,
+                    "checklist": {
+                        "sender_address": None,
+                        "subject": None,
+                        "recipients": None,
+                        "date_utc": None,
+                        "sending_server_ip": None,
+                        "reverse_dns": None,
+                        "reply_to": None,
+                    },
+                    "flags": [],
+                    "enrichment_status": {},
+                },
                 "routing_forensics": {
                     "public_ips": [],
                     "hop_count": 0,
@@ -73,7 +88,14 @@ def test_analyze_response_includes_new_contract_fields(client, monkeypatch):
     assert "routing_forensics" in payload
     assert "whitelist_applied" in payload["risk_assessment"]
     assert payload["risk_assessment"]["whitelist_applied"] is False
-    assert payload["metadata"]["version"] == "2.0"
+    # metadata.version tracks API_VERSION; the two had drifted (2.0 vs 2.1)
+    # and are now bumped together whenever the response shape changes.
+    assert payload["metadata"]["version"] == API_VERSION
+    assert "artifacts" in payload
+    assert set(payload["artifacts"]["checklist"]) == {
+        "sender_address", "subject", "recipients", "date_utc",
+        "sending_server_ip", "reverse_dns", "reply_to",
+    }
 
 
 def test_analyze_preserves_missing_file_error_behavior(client):

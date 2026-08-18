@@ -16,6 +16,11 @@ tldextract==5.3.1
 # Detection engines
 yara-python==4.5.4
 dkimpy==1.1.8
+# Advisory SPF re-evaluation (optional feature, off by default).
+# pyspf prefers dnspython when importable and pulls in no DNS dependency
+# of its own, but it calls the deprecated dns.resolver.query(), so the
+# dnspython pin above is load-bearing for this package.
+pyspf==2.0.14
 
 # HTML parsing
 beautifulsoup4==4.12.3
