@@ -331,3 +331,45 @@ def test_unscored_flags_do_not_appear_as_factors():
     factors = result['risk_assessment']['factors']
     labels = ' '.join(f.get('label', '') for f in factors).lower()
     assert 'helo' not in labels
+
+
+def test_mx_resolver_failure_never_fabricates_the_no_mx_flag():
+    """Tri-state MX: None (outage) must not score; [] (authoritative) must."""
+    with patch(
+        'app.services.dns_checker.DNSCheckerService.get_mx_records',
+        return_value=None,
+    ):
+        outage = analyze(enable_mx_lookup=True)
+    assert outage['artifacts']['enrichment_status']['mx'] == 'unavailable'
+    assert 'sender_domain_has_no_mx' not in {
+        f['code'] for f in outage['artifacts']['flags']
+    }
+    assert outage['risk_assessment']['score'] == analyze()['risk_assessment']['score']
+
+    with patch(
+        'app.services.dns_checker.DNSCheckerService.get_mx_records',
+        return_value=[],
+    ):
+        absent = analyze(enable_mx_lookup=True)
+    assert absent['artifacts']['enrichment_status']['mx'] == 'ok'
+    assert 'sender_domain_has_no_mx' in {
+        f['code'] for f in absent['artifacts']['flags']
+    }
+    assert absent['risk_assessment']['score'] > analyze()['risk_assessment']['score']
+
+
+def test_reverse_dns_outage_reports_error_status_not_a_finding():
+    """lookup_failed maps to an 'error' status, never to observations."""
+    rdns = {
+        'ip': PUBLIC_IP, 'ptr': [], 'ptr_name': None, 'forward_ips': {},
+        'fcrdns': 'lookup_failed', 'source': 'live_dns', 'checked_at': 'now',
+    }
+    with patch(
+        'app.services.dns_checker.DNSCheckerService.reverse_dns_details',
+        return_value=rdns,
+    ):
+        result = analyze(enable_reverse_dns=True)
+    assert result['artifacts']['enrichment_status']['reverse_dns'] == 'error'
+    codes = {f['code'] for f in result['artifacts']['flags']}
+    assert 'no_ptr_record' not in codes
+    assert 'fcrdns_fail' not in codes

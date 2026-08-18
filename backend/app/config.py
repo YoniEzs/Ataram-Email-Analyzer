@@ -59,13 +59,22 @@ class Config:
     )
     MAX_ARCHIVE_RATIO = int(os.environ.get('MAX_ARCHIVE_RATIO', 100))
 
-    # YARA Rules — relative paths resolve against the backend root
+    # YARA Rules — relative paths resolve against the backend root. In a
+    # pip/pipx install there is no backend root above site-packages, so when
+    # the default location is absent (and no explicit path was given) fall
+    # back to the copy bundled inside the package by scripts/sync_webui.py.
+    # This must live here, not in an entry point: the class body evaluates on
+    # first import of the app package, before any main() can set env vars.
     _yara_path = os.environ.get('YARA_RULES_PATH', 'yara_rules')
     YARA_RULES_PATH = (
         _yara_path
         if os.path.isabs(_yara_path)
         else os.path.abspath(os.path.join(basedir, '..', _yara_path))
     )
+    if 'YARA_RULES_PATH' not in os.environ and not os.path.isdir(YARA_RULES_PATH):
+        _bundled_yara = os.path.join(basedir, 'bundled_yara')
+        if os.path.isdir(_bundled_yara):
+            YARA_RULES_PATH = _bundled_yara
 
     # Rate limiting
     RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'true').lower() == 'true'

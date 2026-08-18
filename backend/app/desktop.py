@@ -27,19 +27,20 @@ DEFAULT_PORT = 8321
 
 
 def _configure_environment() -> None:
-    """Desktop defaults, applied before the app package is imported."""
+    """Desktop defaults. Note: the app package is already imported by the
+    time this runs (importing app.desktop imports the app package first), so
+    only settings read lazily — env vars consumed at request/serve time and
+    config read via os.environ in create_app — belong here. Anything Config
+    evaluates at class-body time must be handled in app.config itself."""
     os.environ.setdefault('FLASK_ENV', 'production')
     os.environ.setdefault('FORCE_HTTPS', 'false')
     os.environ.setdefault('RATELIMIT_ENABLED', 'false')
     os.environ.setdefault('HOST', '127.0.0.1')
     os.environ.setdefault('LOG_LEVEL', 'WARNING')
-
-    # In a pip/pipx install the repository-level yara_rules directory does
-    # not exist; fall back to the copy bundled inside the package.
-    if not os.environ.get('YARA_RULES_PATH'):
-        bundled = Path(__file__).resolve().parent / 'bundled_yara'
-        if bundled.is_dir():
-            os.environ['YARA_RULES_PATH'] = str(bundled)
+    # YARA fallback note: the bundled_yara path is resolved in app.config at
+    # class-body time — it cannot be done here, because importing this module
+    # already imported the app package (and thus evaluated Config) before
+    # main() runs when launched via the console script.
 
 
 def find_webui() -> Optional[Path]:

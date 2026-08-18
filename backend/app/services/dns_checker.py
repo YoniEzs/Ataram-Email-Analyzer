@@ -14,11 +14,14 @@ from app.utils.validators import validate_public_ip
 
 logger = logging.getLogger(__name__)
 
+# Cached PTR values: a hostname, "" for a confirmed missing record, or this
+# sentinel for a transient resolver failure (cached briefly, never scored).
+_PTR_LOOKUP_FAILED = '!lookup-failed'
+
 try:
     import dns.resolver
     import dns.reversename
     import dns.exception
-    import dns.reversename
     DNS_AVAILABLE = True
 except ImportError:
     DNS_AVAILABLE = False
@@ -79,9 +82,13 @@ class DNSCheckerService:
                     records.append(value)
                 if len(records) >= limit:
                     break
-            result = records if records else None
-            cache_set(cache_key, result, ttl)
-            return result
+            cache_set(cache_key, records, ttl)
+            return records
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            # Authoritative absence is evidence and may be cached and scored;
+            # a timeout or dead resolver (below) is not.
+            cache_set(cache_key, [], ttl)
+            return []
         except dns.exception.DNSException:
             return None
         except Exception as e:
@@ -134,11 +141,10 @@ class DNSCheckerService:
         Unlike anything read out of the message, this is a live fact about the
         address, so it is classified as observed evidence and may be scored.
 
-        ``fcrdns`` is one of ``pass``, ``fail`` or ``no_ptr``. A resolver
-        failure is reported as ``no_ptr`` rather than distinctly, because the
-        shared PTR cache stores one negative sentinel for both. That is the
-        safe direction: ``no_ptr`` scores nothing, so an outage cannot inflate
-        a risk score the way a spurious ``fail`` would.
+        ``fcrdns`` is one of ``pass``, ``fail``, ``no_ptr`` or
+        ``lookup_failed``. Only ``fail`` is scored: an authoritative "no PTR"
+        is a low-severity note, and a resolver outage must never look like
+        evidence about the sender at all.
         """
         if not validate_public_ip(ip):
             return None
@@ -164,7 +170,13 @@ class DNSCheckerService:
         # name, so only the primary name is confirmed.
         ptr_name = self.reverse_dns(ip)
         if not ptr_name:
-            cache_set(cache_key, result, 3600)
+            # Distinguish "confirmed no PTR" from "resolver unreachable" via
+            # the shared PTR cache the lookup above just populated.
+            if cache_get(f"ptr:{ip}") == _PTR_LOOKUP_FAILED:
+                result['fcrdns'] = 'lookup_failed'
+                cache_set(cache_key, result, 300)
+            else:
+                cache_set(cache_key, result, 3600)
             return result
 
         result['ptr'] = [ptr_name]
@@ -263,7 +275,10 @@ class DNSCheckerService:
         cache_key = f"ptr:{ip}"
         cached = cache_get(cache_key)
         if cached is not None:
-            # "" is the cached sentinel for a confirmed "no PTR record".
+            # "" is the cached sentinel for a confirmed "no PTR record";
+            # _PTR_LOOKUP_FAILED marks a transient resolver failure.
+            if cached == _PTR_LOOKUP_FAILED:
+                return None
             return cached or None
 
         try:
@@ -279,8 +294,15 @@ class DNSCheckerService:
             result = hostnames[0] if hostnames else None
             cache_set(cache_key, result or "", 3600)
             return result
-        except dns.exception.DNSException:
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            # Authoritative: the address genuinely has no PTR record.
             cache_set(cache_key, "", 3600)
+            return None
+        except dns.exception.DNSException:
+            # Transient resolver failure — cache briefly so a burst of
+            # lookups doesn't hammer a dead resolver, but never let it look
+            # like a confirmed absence.
+            cache_set(cache_key, _PTR_LOOKUP_FAILED, 300)
             return None
         except Exception as e:
             logger.warning(f"[DNSCheckerService] Reverse DNS error for {ip}: {e}")
