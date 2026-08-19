@@ -29,6 +29,13 @@ ENV FLASK_APP=run.py \
 
 WORKDIR /app
 
+# Patch fixable OS CVEs that the pinned base digest predates. The Trivy gate
+# (severity HIGH/CRITICAL, ignore-unfixed) fails the build on any fixable
+# base-image vulnerability, and a security tool should ship the patched
+# packages. Dependabot advances the digest; this keeps the interim image clean.
+RUN apt-get update && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /wheels /wheels
 COPY requirements-prod.txt .
 RUN python -m pip install --no-index --find-links=/wheels --upgrade \
