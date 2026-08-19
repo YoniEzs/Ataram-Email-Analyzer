@@ -39,6 +39,11 @@ def html_to_text(html: str) -> str:
 # Upper bound on parsed address entries per header, so a hostile To: line
 # cannot amplify memory before the analyzer's own limits apply.
 MAX_ADDRESSES = 200
+# Upper bound on any single decoded header value reflected into the
+# response. Real MTAs keep headers near 8 KB; a hostile file can carry a
+# far larger one (a 100 KB subject bloats the JSON to ~500 KB). Bounding
+# here caps every reflected header at once without touching body limits.
+MAX_HEADER_CHARS = 16_384
 
 # Headers a receiving MTA writes with the envelope recipient. An address here
 # that appears in neither To: nor Cc: is how a Bcc delivery looks from outside.
@@ -102,13 +107,21 @@ class EmailParserService:
 
     @staticmethod
     def decode_header(val: str) -> str:
-        """Decode email header value"""
+        """Decode an email header value, bounded to MAX_HEADER_CHARS.
+
+        Every reflected header string flows through here, so the length cap
+        applied at this one point protects the subject, recipients, routing
+        strings and the rest from a header-bomb file inflating the response.
+        """
         if not val:
             return ""
         try:
-            return str(make_header(decode_header(val)))
+            decoded = str(make_header(decode_header(val)))
         except Exception:
-            return val
+            decoded = val
+        if len(decoded) > MAX_HEADER_CHARS:
+            return decoded[:MAX_HEADER_CHARS] + "\u2026[truncated]"
+        return decoded
 
     @staticmethod
     def is_probably_msg(file_bytes: bytes, filename: str) -> bool:
