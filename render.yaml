@@ -54,3 +54,25 @@ services:
         value: false
       - key: ENABLE_AUTH_VERIFICATION
         value: true
+      # Artifact enrichment. These disclose the header-derived sending IP to
+      # third-party DNS and RDAP operators. Declared explicitly (rather than
+      # left to the code defaults) so a deployment can actually be switched
+      # into the no-disclosure mode PRIVACY.md documents.
+      - key: ENABLE_REVERSE_DNS
+        value: true
+      - key: ENABLE_IP_RDAP
+        value: true
+      - key: ENABLE_ASN_LOOKUP
+        value: true
+      - key: ENABLE_MX_LOOKUP
+        value: false
+      - key: ENABLE_SPF_ADVISORY
+        value: false
+      - key: DNS_TIMEOUT
+        value: 5
+      - key: WHOIS_TIMEOUT
+        value: 10
+      - key: HTTP_TIMEOUT
+        value: 10
+      - key: SPF_TIMEOUT
+        value: 8

@@ -5,7 +5,7 @@
   "description": "Static frontend and browser smoke tests for Ataram Email Analyzer",
   "type": "module",
   "scripts": {
-    "check": "node --check src/js/*.js",
+    "check": "node --check src/runtime-config.js && node --check src/js/*.js",
     "test:e2e": "node tests/smoke.mjs"
   },
   "devDependencies": {

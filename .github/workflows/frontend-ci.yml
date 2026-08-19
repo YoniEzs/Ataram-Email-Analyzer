@@ -53,7 +53,7 @@ jobs:
       - name: Run frontend DOM contract
         working-directory: backend
         run: |
-          python -m pip install pytest==9.0.3
+          python -m pip install pytest==9.1.1
           pytest tests/test_frontend_dom_contract.py -q
 
   browser-smoke:
