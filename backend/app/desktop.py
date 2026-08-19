@@ -110,7 +110,10 @@ def main() -> int:
     port = _free_port(int(os.environ.get('ATARAM_PORT', DEFAULT_PORT)))
     url = f'http://127.0.0.1:{port}'
 
-    print(f'Ataram Email Analyzer running at {url}  (Ctrl+C to quit)')
+    # flush: stdout is block-buffered when redirected to a file or pipe,
+    # and serve() below never returns, so without this the URL would stay
+    # stuck in the buffer for anyone capturing output.
+    print(f'Ataram Email Analyzer running at {url}  (Ctrl+C to quit)', flush=True)
     if os.environ.get('ATARAM_NO_BROWSER', '').lower() not in ('1', 'true'):
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
 
