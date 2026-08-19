@@ -681,12 +681,43 @@ class EmailAnalyzerService:
                 status['spf_advisory'] = 'ok'
                 advisory['spf'] = spf
 
-            artifacts['checklist'] = ArtifactExtractorService._build_checklist(artifacts)
-            artifacts['flags'] = collect_flags(artifacts)
         except Exception as exc:
+            # A partial merge must not masquerade as a complete one. Record it
+            # against every source that never reached a terminal status, so the
+            # report says the enrichment broke instead of showing a confident
+            # verdict built on half-merged data.
             logger.warning(
                 '[EmailAnalyzerService] artifact enrichment merge failed: %s', exc
             )
+            status = artifacts.setdefault('enrichment_status', {})
+            for source in (
+                'reverse_dns', 'ip_intel', 'mx', 'spf_advisory',
+            ):
+                status.setdefault(source, 'error')
+            status['merge'] = 'error'
+        finally:
+            # Always rebuilt, never skipped. These are derived views over
+            # `artifacts`; leaving the pre-enrichment copies in place after a
+            # failure would contradict the block they claim to summarise.
+            # Guarded in turn, because a rebuild that raised out of `finally`
+            # would take down the whole analysis — a worse failure than the
+            # stale views this replaces.
+            try:
+                artifacts['checklist'] = ArtifactExtractorService._build_checklist(
+                    artifacts
+                )
+            except Exception as exc:
+                logger.warning(
+                    '[EmailAnalyzerService] checklist rebuild failed: %s', exc
+                )
+                artifacts.setdefault('enrichment_status', {})['merge'] = 'error'
+            try:
+                artifacts['flags'] = collect_flags(artifacts)
+            except Exception as exc:
+                logger.warning(
+                    '[EmailAnalyzerService] flag rebuild failed: %s', exc
+                )
+                artifacts.setdefault('enrichment_status', {})['merge'] = 'error'
 
     def _analyze_authentication(self, auth_results: str) -> Dict[str, Any]:
         """Parse untrusted Authentication-Results claims for display only."""

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.artifact_extractor import ArtifactExtractorService
 from app.services.email_analyzer import EmailAnalyzerService
 from app.services.email_parser import EmailParserService
 from app.utils.cache import _cache
@@ -373,3 +374,75 @@ def test_reverse_dns_outage_reports_error_status_not_a_finding():
     codes = {f['code'] for f in result['artifacts']['flags']}
     assert 'no_ptr_record' not in codes
     assert 'fcrdns_fail' not in codes
+
+
+# --- enrichment merge failure ------------------------------------------------
+
+def merge_with_broken_payload(artifacts):
+    """Drive the merge directly with a reverse-DNS payload of the wrong shape.
+
+    The merge calls .get() on that value and raises partway through, which is
+    the partial-merge condition this section is about. Driving the method
+    directly keeps the failure inside the merge instead of tripping the
+    earlier unpacking in analyze().
+    """
+    analyzer = EmailAnalyzerService(
+        enable_whois=False,
+        enable_abuseipdb=False,
+        enable_auth_verification=False,
+        enable_reverse_dns=True,
+        enable_ip_rdap=False,
+        enable_asn_lookup=False,
+        enable_spf_advisory=False,
+    )
+    analyzer._merge_artifact_enrichment(
+        artifacts, {'rdns': 'not-a-dict'}, 'sender.com', PUBLIC_IP
+    )
+    return artifacts
+
+
+def broken_artifacts():
+    """A realistically-shaped artifact block carrying deliberately stale views.
+
+    Built from a real extraction rather than hand-written, so the rebuild in
+    the merge's `finally` has everything it needs and the test measures the
+    stale-view behaviour rather than a malformed fixture.
+    """
+    parsed = EmailParserService().parse_email(EML, 'sample.eml')
+    artifacts = ArtifactExtractorService().extract(parsed['headers'])
+    artifacts.setdefault('sending_server', {})['enriched_ip'] = PUBLIC_IP
+    artifacts['checklist'] = 'stale-checklist'
+    artifacts['flags'] = [{'code': 'stale_flag'}]
+    return artifacts
+
+
+def test_merge_failure_is_reported_as_error_not_silence():
+    """A broken merge must show up in enrichment_status, not just the log."""
+    artifacts = merge_with_broken_payload(broken_artifacts())
+    assert artifacts['enrichment_status']['merge'] == 'error'
+
+
+def test_merge_failure_marks_unfinished_sources_as_error():
+    """Sources the merge never reached must not be left without a status."""
+    artifacts = merge_with_broken_payload(broken_artifacts())
+    status = artifacts['enrichment_status']
+    for source in ('reverse_dns', 'ip_intel', 'mx', 'spf_advisory'):
+        assert status.get(source) is not None, f'{source} left without a status'
+
+
+def test_merge_failure_still_rebuilds_derived_views():
+    """`checklist` and `flags` are derived views and must never go stale.
+
+    They used to be the last two statements inside the merge\'s try block, so
+    any earlier failure returned a partially-enriched block still summarised by
+    its pre-enrichment views — a confident-looking verdict over half-merged
+    data, with only a log line to say so.
+    """
+    artifacts = merge_with_broken_payload(broken_artifacts())
+    assert artifacts['checklist'] != 'stale-checklist'
+    assert artifacts['flags'] != [{'code': 'stale_flag'}]
+
+
+def test_merge_failure_does_not_raise():
+    """The merge still degrades to no data rather than failing the analysis."""
+    merge_with_broken_payload(broken_artifacts())
