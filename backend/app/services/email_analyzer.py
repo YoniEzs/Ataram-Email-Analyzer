@@ -905,19 +905,29 @@ class EmailAnalyzerService:
             f'{suspicious_url_count} flagged link(s)',
         )
 
-        # Attachments (max 15 points) — weighted by severity so one critical
-        # attachment (hidden executable, VT hit) outweighs mild oddities
-        severity_points = {'critical': 12, 'high': 8, 'medium': 5, 'low': 2}
+        # Attachments (max 40 points) — weighted by severity. A single
+        # locally-verified critical attachment (hidden executable, executable
+        # bytes under a document extension, malware YARA hit, executable inside
+        # an archive) is high-confidence and non-forgeable, so it alone must
+        # clear the "medium" floor (25) — otherwise a message literally
+        # carrying an executable reads as "no strong indicators detected".
+        severity_points = {'critical': 25, 'high': 15, 'medium': 8, 'low': 3}
+        suspicious_attachments = [
+            a for a in attachment_analysis.get('attachments', [])
+            if a.get('is_suspicious')
+        ]
         weighted = sum(
             severity_points.get(a.get('severity'), 0)
-            for a in attachment_analysis.get('attachments', [])
-            if a.get('is_suspicious')
+            for a in suspicious_attachments
         )
         count_based = attachment_analysis.get('suspicious_count', 0) * 5
-        att_pts = min(15, max(weighted, count_based))
+        att_pts = min(40, max(weighted, count_based))
         score += att_pts
         add_factor(
-            'Suspicious attachments', att_pts, 'high',
+            'Suspicious attachments', att_pts,
+            'critical'
+            if any(a.get('severity') == 'critical' for a in suspicious_attachments)
+            else 'high',
             f"{attachment_analysis.get('suspicious_count', 0)} flagged file(s)",
         )
 
@@ -986,8 +996,17 @@ class EmailAnalyzerService:
         abuse_score = (abuse_data or {}).get('abuseConfidenceScore') or 0
         if not isinstance(abuse_score, int):
             abuse_score = 0
+        # An executable delivered inside an archive (zip-hidden payload) is
+        # tagged 'archive_contains_executable', not 'executable_file'. Treat
+        # both as an executable so zipping the payload doesn't dodge the
+        # new-domain escalation below.
+        executable_issue_tags = {
+            'executable_file',
+            'archive_contains_executable',
+            'executable_content_mismatch',
+        }
         has_executable = any(
-            'executable_file' in a.get('issues', [])
+            executable_issue_tags.intersection(a.get('issues', []))
             for a in attachment_analysis.get('attachments', [])
         )
 

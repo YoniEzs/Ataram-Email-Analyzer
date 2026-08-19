@@ -54,6 +54,15 @@ This project follows Semantic Versioning after the first stable release.
 
 ### Fixed
 
+- A message whose only threat is a locally-verified critical attachment (a
+  hidden executable, executable bytes under a document extension, or an
+  executable inside an archive) now reaches at least "medium" instead of
+  reading "no strong indicators detected": the attachment score cap rose from
+  15 to 40 with critical worth 25, and zip-hidden executables count as
+  executables for the new-domain escalation rule. Ports the fix from the
+  previously unmerged PR #16 onto the current scoring code, together with its
+  end-to-end real-email regression matrix.
+
 - DNS answers are tri-state everywhere they can be scored: an authoritative
   "no records" answer ([]) is evidence, a resolver failure (None) is not. A
   DNS outage can no longer fabricate the scored no-MX flag or make a missing
