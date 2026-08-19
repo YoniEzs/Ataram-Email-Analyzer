@@ -1,18 +1,15 @@
 name: Frontend CI
 
+# No paths filter: these checks are required by branch protection, and a
+# path-filtered check never reports on a PR that misses its filter, leaving
+# the PR permanently "Expected" and unmergeable. Running on every push and PR
+# also keeps the base images continuously scanned -- the nginx image once went
+# five weeks without a Trivy run because a docs-only main was never rebuilt.
 on:
   push:
     branches: [main, develop]
-    paths:
-      - 'frontend/**'
-      - 'backend/tests/test_frontend_dom_contract.py'
-      - '.github/workflows/frontend-ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'frontend/**'
-      - 'backend/tests/test_frontend_dom_contract.py'
-      - '.github/workflows/frontend-ci.yml'
   workflow_dispatch:
 
 permissions:
