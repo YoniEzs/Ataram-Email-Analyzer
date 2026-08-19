@@ -6,6 +6,18 @@ This project follows Semantic Versioning after the first stable release.
 
 ### Added
 
+- `docs/QA-GUIDE.md`: a numbered manual test script covering the paths
+  automation cannot reach — real Outlook `.msg` files, the browser upload
+  path, real API keys, resource limits and the offline mode.
+- `tests/test_samples_regression.py`: the verdicts published in
+  `samples/README.md` are now enforced. They previously existed only as prose
+  and could drift from the scorer with nothing failing.
+- Direct tests for `app/services/ip_reputation.py`, which was mocked out of
+  every existing test (29% → 91% coverage): request construction, key
+  handling, response mapping, caching and failure degradation.
+- Guard tests asserting `render.yaml` declares every `ENABLE_*` flag and
+  timeout the code reads, matching the existing compose guards.
+
 - Independent DKIM verification and explicit header-claim trust metadata.
 - Hebrew/RTL interface, OpenAPI v1 routes, YARA and VirusTotal hash lookups.
 - Redis-backed rate limits/cache, RDAP, resource limits and ZIP-bomb detection.
@@ -53,6 +65,40 @@ This project follows Semantic Versioning after the first stable release.
   `CSP_ALLOW_INLINE_STYLE` flag; server CSP is unchanged.
 
 ### Fixed
+
+- A failure inside artifact enrichment left `checklist` and `flags` holding
+  their pre-enrichment values, so a partially-merged block was summarised by
+  stale derived views and returned as a confident verdict with only a log line
+  to say otherwise. Both are now always rebuilt, each guarded so a rebuild
+  failure cannot take down the analysis, and the failure is recorded as
+  `enrichment_status.merge = 'error'` instead of passing silently.
+- `render.yaml` declared none of `ENABLE_REVERSE_DNS`, `ENABLE_IP_RDAP`,
+  `ENABLE_ASN_LOOKUP`, `ENABLE_MX_LOOKUP` or `ENABLE_SPF_ADVISORY`. The first
+  three default to true, so a Render deployment disclosed the header-derived
+  sending IP to Team Cymru and rdap.org with no way for the operator to turn
+  it off — the no-disclosure mode `PRIVACY.md` documents was unreachable there.
+- `npm run check` globbed `src/js/*.js` only, missing `src/runtime-config.js`
+  — the one file users are instructed to hand-edit. A syntax error there
+  passed CI and white-screened the app.
+- The coverage floor existed only as a `--cov-fail-under` flag repeated in five
+  places, so a bare `pytest` ran with no gate. It is now declared in
+  `pyproject.toml` and raised from 65 to 80 against measured coverage of 87.
+- `frontend-ci.yml` pinned `pytest==9.0.3` while `requirements-dev.txt` pinned
+  `9.1.1`.
+
+### Documentation
+
+- The README advertised four ways to run the tool; three of them — the desktop
+  zip, `pipx install ataram-email-analyzer` and the published-image compose
+  file — cannot work, because no version has been tagged and no PyPI publish
+  workflow exists. They are now marked as not yet available rather than
+  presented as working instructions.
+- Documented `python -m app.desktop`, which serves the UI and API from one
+  process in a source checkout. It was the fastest way to run the tool and
+  appeared in no document.
+- `backend/README.md` sent readers to `python run.py` without saying it serves
+  no UI, and neither README mentioned that a virtual environment is required
+  because `pyspf` fails to build against some system setuptools.
 
 - A message whose only threat is a locally-verified critical attachment (a
   hidden executable, executable bytes under a document extension, or an

@@ -93,29 +93,55 @@ can be fabricated.
 
 ## Run it in 2 minutes
 
-Pick whichever fits your machine — every option runs entirely locally:
+Every option runs entirely locally.
 
-**Desktop app (Windows / macOS / Linux)** — download the zip for your OS from
-the [latest release](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest),
-extract, run `AtaramEmailAnalyzer`. Your browser opens by itself. Binaries are
-unsigned; verify downloads against the release's `SHA256SUMS.txt`.
+### From a source checkout (works today)
 
-**pipx** (Python 3.11+):
+The fastest way to get the full tool — UI and API in one local process, bound
+to `127.0.0.1`:
 
 ```bash
-pipx install ataram-email-analyzer
-ataram-analyzer
+git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
+cd Ataram-Email-Analyzer/backend
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python -m pip install -r requirements-prod.txt waitress
+python -m app.desktop
 ```
 
-**Docker, from published images** — no build step:
+A browser tab opens at `http://127.0.0.1:8321`. Set `ATARAM_NO_BROWSER=1` to
+suppress that, or `ATARAM_PORT` to pick a port.
+
+A virtual environment is required, not just recommended: one of the pinned
+dependencies (`pyspf`) fails to build against the patched setuptools shipped by
+some system Pythons.
+
+Or with Docker, if you would rather not install Python:
 
 ```bash
-curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
-docker compose -f docker-compose.release.yml up
+cp .env.example .env
+docker compose up --build      # then open http://localhost:3000
 ```
 
-Then try the synthetic messages in [`samples/`](samples/) — each documents the
-verdict it should produce.
+Either way, try the synthetic messages in [`samples/`](samples/) — each
+documents the exact verdict it should produce, and those verdicts are enforced
+by `backend/tests/test_samples_regression.py`.
+
+### From a published release (not yet available)
+
+> **These three paths do not work yet.** No version has been tagged, so no
+> release artifacts and no PyPI package exist. They are the intended
+> distribution channels from `v0.1.0` onward, listed here so the plan is
+> visible — use a source checkout until then.
+
+- **Desktop app** — download the zip for your OS from the
+  [latest release](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest),
+  extract, run `AtaramEmailAnalyzer`. Binaries are unsigned; verify downloads
+  against the release's `SHA256SUMS.txt`.
+- **pipx** (Python 3.11+) — `pipx install ataram-email-analyzer && ataram-analyzer`.
+- **Docker, from published images** — `docker compose -f docker-compose.release.yml up`
+  (requires `ATARAM_VERSION`, since `:latest` is only published for stable
+  releases).
 
 The desktop and pipx builds bind to `127.0.0.1` only and serve the UI and API
 from one process; the Docker stack is the hardened multi-container deployment
@@ -156,7 +182,7 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
 python -m pip install -r requirements-dev.txt
-pytest -q --cov=app --cov-fail-under=65
+pytest -q --cov=app --cov-fail-under=80
 ruff check app tests
 mypy
 ```
@@ -259,6 +285,8 @@ See [CLOUDFLARE_RENDER_DEPLOYMENT.md](CLOUDFLARE_RENDER_DEPLOYMENT.md).
 
 ## Security and releases
 
+- Manual test script: [docs/QA-GUIDE.md](docs/QA-GUIDE.md)
+- SOC evaluation walkthrough: [docs/SOC-EVALUATION.md](docs/SOC-EVALUATION.md)
 - Vulnerabilities: [SECURITY.md](SECURITY.md)
 - Contribution process: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Release gates: [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
