@@ -4,6 +4,13 @@ This project follows Semantic Versioning after the first stable release.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0-rc1] - 2026-08-19
+
+First public release candidate, published as an explicitly experimental
+pre-release. Verdicts are advisory; see `DISCLAIMER.md`.
+
 ### Added
 
 - Independent DKIM verification and explicit header-claim trust metadata.
@@ -81,6 +88,18 @@ This project follows Semantic Versioning after the first stable release.
 
 ### Security
 
+- Docker deployments honour the enrichment toggles. `docker-compose.yml` and
+  `docker-compose.release.yml` forwarded only the WHOIS/AbuseIPDB/VirusTotal
+  flags, so `ENABLE_REVERSE_DNS=false` (and every other enrichment toggle) had
+  no effect inside the container and the sending IP was still disclosed to
+  Team Cymru and RDAP. A test now derives the required set from `config.py`,
+  so a new flag cannot silently go unforwarded.
+- Reflected header values are bounded before they are echoed back, so a
+  single oversized header can no longer inflate the response far beyond the
+  size of the uploaded message.
+- The backend runtime image patches fixable base-image CVEs at build time,
+  so a pinned base digest that predates a Debian security update does not
+  ship known-vulnerable packages.
 - Authentication-Results claims never affect scoring.
 - Advisory SPF results never affect scoring and are kept out of the
   `authentication` block: both of their inputs come from forgeable headers.
@@ -92,7 +111,3 @@ This project follows Semantic Versioning after the first stable release.
   cannot disclose RFC1918 space to a resolver.
 - Default upload limit reduced to 25 MB with parser and scanner sub-limits.
 - Backend container uses a multi-stage non-root runtime image.
-
-## [0.1.0-rc1] - Unreleased
-
-First public release candidate; publish only after `RELEASE_CHECKLIST.md` passes.

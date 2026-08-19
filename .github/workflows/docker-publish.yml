@@ -126,7 +126,15 @@ jobs:
         uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
 
       - name: Sign image digest
-        run: cosign sign --yes "${REGISTRY}/${IMAGE_NAME_BACKEND}@${{ steps.push.outputs.digest }}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          # OCI repository names must be lowercase, but github.repository
+          # preserves the owner/repo casing this repo happens to use.
+          # metadata-action lowercases the push tags for us; this run step
+          # has to do it itself or cosign rejects the reference.
+          IMAGE="${REGISTRY}/${IMAGE_NAME_BACKEND}"
+          cosign sign --yes "${IMAGE,,}@${DIGEST}"
 
   frontend:
     name: Frontend image
@@ -205,4 +213,12 @@ jobs:
         uses: sigstore/cosign-installer@f713795cb21599bc4e5c4b58cbad1da852d7eeb9 # v3
 
       - name: Sign image digest
-        run: cosign sign --yes "${REGISTRY}/${IMAGE_NAME_FRONTEND}@${{ steps.push.outputs.digest }}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          # OCI repository names must be lowercase, but github.repository
+          # preserves the owner/repo casing this repo happens to use.
+          # metadata-action lowercases the push tags for us; this run step
+          # has to do it itself or cosign rejects the reference.
+          IMAGE="${REGISTRY}/${IMAGE_NAME_FRONTEND}"
+          cosign sign --yes "${IMAGE,,}@${DIGEST}"

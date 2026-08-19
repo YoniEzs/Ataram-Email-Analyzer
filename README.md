@@ -96,23 +96,26 @@ can be fabricated.
 Pick whichever fits your machine — every option runs entirely locally:
 
 **Desktop app (Windows / macOS / Linux)** — download the zip for your OS from
-the [latest release](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest),
+the [releases page](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases),
 extract, run `AtaramEmailAnalyzer`. Your browser opens by itself. Binaries are
 unsigned; verify downloads against the release's `SHA256SUMS.txt`.
 
-**pipx** (Python 3.11+):
+**pipx** (Python 3.11+) — *not published yet, planned for stable v0.1.0*:
 
 ```bash
+# This will not work until the package is uploaded to PyPI.
 pipx install ataram-email-analyzer
-ataram-analyzer
 ```
 
 **Docker, from published images** — no build step:
 
 ```bash
 curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
-docker compose -f docker-compose.release.yml up
+ATARAM_VERSION=0.1.0-rc1 docker compose -f docker-compose.release.yml up
 ```
+
+`ATARAM_VERSION` is required while only a release candidate exists — the
+`:latest` image tag is published for stable releases only.
 
 Then try the synthetic messages in [`samples/`](samples/) — each documents the
 verdict it should produce.
