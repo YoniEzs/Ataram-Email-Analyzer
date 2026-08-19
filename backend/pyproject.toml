@@ -59,3 +59,12 @@ app = [
     "webui/**/*",
     "bundled_yara/*",
 ]
+
+[tool.ruff.lint]
+# Pin the enforced ruleset explicitly. ruff 0.16 widened its defaults (UP,
+# BLE, PL, ...), several of which argue with deliberate choices here: blanket
+# excepts implement the documented degrade-to-None lookup philosophy, and
+# bidirectional-Unicode literals are the Hebrew/bidi test corpus. This is the
+# classic pycodestyle+pyflakes set the project has always enforced; widening
+# it is welcome as a deliberate change, not as tool drift.
+select = ["E4", "E7", "E9", "F"]
