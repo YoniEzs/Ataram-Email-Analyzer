@@ -60,6 +60,20 @@ app = [
     "bundled_yara/*",
 ]
 
+[tool.pytest.ini_options]
+# The coverage floor used to exist only as a --cov-fail-under flag repeated in
+# five places (two workflows, RELEASE_CHECKLIST.md and two READMEs). A bare
+# `pytest` therefore ran with no gate at all, and the copies could drift apart.
+# Declaring it here makes plain `pytest` enforce the same floor CI does; the
+# explicit flag in the workflows stays as documentation of intent.
+#
+# The floor is 80, not the historical 65: measured coverage is 86%, so 65 had
+# stopped being a gate and would have let a third of the codebase go dark
+# without failing. Raise this as coverage improves; never lower it to make a
+# change fit.
+addopts = "--cov=app --cov-report=term --cov-fail-under=80"
+testpaths = ["tests"]
+
 [tool.ruff.lint]
 # Pin the enforced ruleset explicitly. ruff 0.16 widened its defaults (UP,
 # BLE, PL, ...), several of which argue with deliberate choices here: blanket

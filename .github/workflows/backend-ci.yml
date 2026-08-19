@@ -64,7 +64,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
           SECRET_KEY: test-secret-key-not-for-production
           FLASK_ENV: testing
-        run: pytest -q --cov=app --cov-report=term --cov-fail-under=65
+        run: pytest -q --cov=app --cov-report=term --cov-fail-under=80
 
   docker:
     name: Backend Docker smoke test
