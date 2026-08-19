@@ -44,6 +44,13 @@ pre-release. Verdicts are advisory; see `DISCLAIMER.md`.
 
 ### Changed
 
+- Attachments and URLs no longer render a third-party lookup button. Files and
+  URLs are checked with open-source tooling only, and the tool no longer hands
+  a hash or a domain to VirusTotal on the analyst's behalf — the hash is still
+  one click to copy, so pivoting stays a deliberate act. Sender-IP and
+  sender-domain reputation links are unchanged: they describe infrastructure
+  rather than the message payload.
+
 - Browser API destination now defaults to same-origin; no owner-operated server
   is selected implicitly.
 - Low-risk verdict now says “No strong indicators detected” rather than

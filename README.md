@@ -20,8 +20,12 @@ and malicious-email indicators.
 - Inspects attachment names, magic bytes, hashes and ZIP metadata without
   extracting archives.
 - Runs bounded YARA scans against message and attachment bytes.
-- Optionally checks sender IPs with AbuseIPDB and attachment hashes with
-  VirusTotal.
+- Checks URLs and attachments with open-source tooling only, and never runs
+  them: a URL is parsed, never requested, and an attachment is hashed and
+  inspected, never executed or extracted to disk. Analysing a phishing message
+  therefore cannot reach attacker infrastructure or disclose your IP to it.
+- Optionally checks sender IPs with AbuseIPDB, and attachment hashes with
+  VirusTotal when you explicitly enable it (off by default).
 - Looks up SPF, DKIM and DMARC DNS records and domain-registration data via RDAP.
 - Independently verifies DKIM when raw MIME bytes are available.
 - Provides an English/Hebrew interface, JSON export, printable reports and a

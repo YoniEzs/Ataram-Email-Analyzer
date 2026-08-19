@@ -141,6 +141,17 @@ Every one should return a clear message and leave the app usable.
 - **`.msg` (Outlook) support is real but only synthetically tested** so far —
   a genuine Outlook export is exactly the kind of file worth trying, and worth
   reporting if anything looks off.
+- **URLs are never fetched and attachments are never run.** URL checks are
+  string analysis only (`urllib.parse`, homograph and shortener heuristics);
+  attachment checks are hashing, magic bytes and ZIP *metadata* — archives are
+  never inflated to disk. So opening a live phish in this tool does not touch
+  the attacker's infrastructure. The flip side is that it is **not a sandbox**:
+  there is no detonation, so nothing here tells you what the payload would
+  actually do when run.
+- **No third-party lookup is performed for you on files or URLs.** The results
+  view carries no "check this hash/URL on VirusTotal" button — copy the value
+  and pivot deliberately if you want to. Submitting a sample to a public
+  service is itself a disclosure, and is your decision, not the tool's.
 - **A low score is never a safety guarantee** — it means no strong indicators
   were found in this file, not that the message is safe.
 - Enrichment reflects the *claimed* sending IP from the `Received` chain, which
