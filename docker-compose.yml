@@ -31,6 +31,20 @@ services:
       ENABLE_WHOIS: "${ENABLE_WHOIS:-true}"
       ENABLE_ABUSEIPDB: "${ENABLE_ABUSEIPDB:-true}"
       ENABLE_VIRUSTOTAL: "${ENABLE_VIRUSTOTAL:-false}"
+      # Header-derived enrichment. These disclose the sending IP/domain to
+      # third-party DNS and RDAP services; without forwarding them, setting
+      # e.g. ENABLE_REVERSE_DNS=false in .env would have no effect in Docker.
+      ENABLE_AUTH_VERIFICATION: "${ENABLE_AUTH_VERIFICATION:-true}"
+      ENABLE_REVERSE_DNS: "${ENABLE_REVERSE_DNS:-true}"
+      ENABLE_IP_RDAP: "${ENABLE_IP_RDAP:-true}"
+      ENABLE_ASN_LOOKUP: "${ENABLE_ASN_LOOKUP:-true}"
+      ENABLE_MX_LOOKUP: "${ENABLE_MX_LOOKUP:-false}"
+      ENABLE_SPF_ADVISORY: "${ENABLE_SPF_ADVISORY:-false}"
+      DNS_TIMEOUT: "${DNS_TIMEOUT:-5}"
+      WHOIS_TIMEOUT: "${WHOIS_TIMEOUT:-10}"
+      HTTP_TIMEOUT: "${HTTP_TIMEOUT:-10}"
+      SPF_TIMEOUT: "${SPF_TIMEOUT:-8}"
+      WHITELIST_DOMAINS: "${WHITELIST_DOMAINS:-}"
       REDIS_URL: redis://redis:6379/0
       RATELIMIT_STORAGE_URI: redis://redis:6379/1
       TRUST_PROXY_COUNT: "1"
