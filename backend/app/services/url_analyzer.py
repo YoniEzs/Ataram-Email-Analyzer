@@ -68,7 +68,11 @@ class URLAnalyzerService:
                 soup = BeautifulSoup(html, 'html.parser')
                 for tag in soup.find_all(['a', 'area', 'form', 'iframe', 'img', 'script']):
                     for attr in ('href', 'src', 'action'):
-                        value = (tag.get(attr) or '').strip()
+                        raw_value = tag.get(attr)
+                        # bs4 may return a list for multi-valued attributes
+                        if isinstance(raw_value, list):
+                            raw_value = ' '.join(str(v) for v in raw_value)
+                        value = (raw_value or '').strip()
                         if value.lower().startswith(('http://', 'https://')):
                             urls.append(value)
                         elif value.lower().startswith('www.'):
