@@ -61,6 +61,13 @@ pre-release. Verdicts are advisory; see `DISCLAIMER.md`.
 
 ### Fixed
 
+- The desktop app no longer crashes at startup when its folder sits near a
+  filesystem root. `find_webui()` built the source-checkout candidate eagerly
+  with `parents[2]`, raising `IndexError` before the bundled UI could be found
+  — so extracting the Windows zip straight onto `D:\` or a USB stick killed
+  the app. Windows, macOS and Linux binaries are now built and smoke-tested on
+  every pull request that can affect them, rather than first at release time.
+
 - A message whose only threat is a locally-verified critical attachment (a
   hidden executable, executable bytes under a document extension, or an
   executable inside an archive) now reaches at least "medium" instead of

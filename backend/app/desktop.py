@@ -45,10 +45,14 @@ def _configure_environment() -> None:
 
 def find_webui() -> Optional[Path]:
     """Locate the static UI: bundled copy first, repo checkout second."""
-    candidates = [
-        Path(__file__).resolve().parent / 'webui',            # packaged
-        Path(__file__).resolve().parents[2] / 'frontend' / 'src',  # repo
-    ]
+    here = Path(__file__).resolve()
+    candidates = [here.parent / 'webui']                      # packaged
+    # Only meaningful in a source checkout. Guarded because `parents[2]` does
+    # not exist when this module sits near a filesystem root -- exactly where
+    # a frozen build lands if the user extracts the zip to a drive root, and
+    # the IndexError would fire before the bundled candidate below is tried.
+    if len(here.parents) > 2:
+        candidates.append(here.parents[2] / 'frontend' / 'src')  # repo
     bundle_root = getattr(sys, '_MEIPASS', None)              # PyInstaller
     if bundle_root:
         candidates.insert(0, Path(bundle_root) / 'app' / 'webui')

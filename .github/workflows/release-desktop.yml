@@ -111,7 +111,11 @@ jobs:
         shell: bash
         run: |
           cd dist
-          ARCHIVE="AtaramEmailAnalyzer-${GITHUB_REF_NAME:-dev}-${{ matrix.label }}.zip"
+          # GITHUB_REF_NAME is "26/merge" on pull_request events, and a slash in
+          # the name makes zip treat it as a directory path. Tag refs never
+          # contain one, so release assets keep their exact v0.1.0-rc1 naming.
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          ARCHIVE="AtaramEmailAnalyzer-${VERSION//\//-}-${{ matrix.label }}.zip"
           if [ "$RUNNER_OS" = "Windows" ]; then
             7z a -tzip "$ARCHIVE" AtaramEmailAnalyzer >/dev/null
           else
