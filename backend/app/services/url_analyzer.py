@@ -53,6 +53,22 @@ class URLAnalyzerService:
     # reports the defence as the threat and never looks at the real target,
     # which is sitting URL-encoded inside a query parameter.
     _SAFELINK_HOSTS = ('safelinks.protection.outlook.com',)
+
+    @staticmethod
+    def _host_is(host: str, domain: str) -> bool:
+        """Exact host or a true subdomain of it -- never a bare suffix match.
+
+        `host.endswith('urldefense.com')` is also true of
+        `evilurldefense.com`, which anyone can register. Treating that as a
+        trusted gateway would make this code unwrap whatever the attacker put
+        in the query parameter, so the analyst would be shown a harmless
+        target while the link actually points at the attacker's own host --
+        turning the unwrapper into a way to hide a destination rather than
+        reveal one.
+        """
+        host = (host or '').lower()
+        domain = domain.lower()
+        return host == domain or host.endswith('.' + domain)
     _WRAPPERS = {
         'safelinks.protection.outlook.com': ('Microsoft Safe Links', 'url'),
         'linkprotect.cudasvc.com': ('Barracuda Link Protection', 'a'),
@@ -78,24 +94,31 @@ class URLAnalyzerService:
         target = None
         name = None
 
-        if any(host.endswith(h) for h in self._SAFELINK_HOSTS):
+        if any(self._host_is(host, h) for h in self._SAFELINK_HOSTS):
             name = 'Microsoft Safe Links'
             target = urllib.parse.parse_qs(parsed.query).get('url', [None])[0]
         elif host in self._WRAPPERS:
             name, param = self._WRAPPERS[host]
             target = urllib.parse.parse_qs(parsed.query).get(param, [None])[0]
-        elif host.endswith('urldefense.proofpoint.com'):
+        elif self._host_is(host, 'urldefense.proofpoint.com'):
             name = 'Proofpoint URL Defense'
             raw = urllib.parse.parse_qs(parsed.query).get('u', [None])[0]
             if raw:
                 # v2 substitutes '-' for '%' and '_' for '/' before quoting.
                 target = urllib.parse.unquote(raw.replace('-', '%').replace('_', '/'))
-        elif host.endswith('urldefense.com'):
+        elif self._host_is(host, 'urldefense.com'):
             name = 'Proofpoint URL Defense'
-            match = re.search(r'/v3/__(.+?)__;', url)
-            if match:
-                target = urllib.parse.unquote(match.group(1))
-        elif host.endswith('mimecast.com'):
+            # Index arithmetic rather than a regex: a lazy quantifier scanning
+            # an attacker-supplied URL backtracks quadratically on input like
+            # '/v3/__aaaa...', and this string comes straight out of a hostile
+            # message.
+            marker = '/v3/__'
+            start = url.find(marker)
+            if start != -1:
+                end = url.find('__;', start + len(marker))
+                if end != -1:
+                    target = urllib.parse.unquote(url[start + len(marker):end])
+        elif self._host_is(host, 'mimecast.com'):
             # Mimecast encodes the target server-side; it cannot be recovered
             # from the link alone. Name it so the analyst knows why the
             # hostname is not the sender's, and stop.

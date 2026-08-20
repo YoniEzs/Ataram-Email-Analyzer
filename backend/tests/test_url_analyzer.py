@@ -152,3 +152,44 @@ def test_a_real_indicator_still_makes_a_url_suspicious():
     )
 
     assert result['is_suspicious'] is True
+
+
+def test_a_lookalike_gateway_domain_is_not_trusted():
+    """`endswith('urldefense.com')` also matches `evilurldefense.com`.
+
+    Anyone can register that. Treating it as a gateway would make the
+    unwrapper display whatever the attacker puts in the query parameter, so
+    the analyst would see a harmless target while the link points at the
+    attacker's host -- the unwrapper would be hiding a destination instead of
+    revealing one.
+    """
+    hostile = ('https://evilurldefense.com/v3/'
+               '__https://harmless.example.com/x__;!!A$')
+    real, wrapper = URLAnalyzerService().unwrap_url(hostile)
+
+    assert wrapper is None
+    assert real == hostile
+
+
+def test_lookalike_safelinks_and_mimecast_are_not_trusted():
+    service = URLAnalyzerService()
+
+    for hostile in (
+        'https://notmimecast.com/s/AbC',
+        'https://evilsafelinks.protection.outlook.com.attacker.test/'
+        '?url=https%3A%2F%2Fharmless.example.com',
+    ):
+        real, wrapper = service.unwrap_url(hostile)
+        assert wrapper is None, hostile
+        assert real == hostile
+
+
+def test_a_real_subdomain_of_a_gateway_still_unwraps():
+    """The fix must not break the legitimate case it is guarding."""
+    real, wrapper = URLAnalyzerService().unwrap_url(
+        'https://eur02.safelinks.protection.outlook.com/'
+        '?url=https%3A%2F%2Fevil.example.com%2Fp'
+    )
+
+    assert wrapper == 'Microsoft Safe Links'
+    assert real == 'https://evil.example.com/p'

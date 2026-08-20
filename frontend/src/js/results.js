@@ -413,7 +413,12 @@ class ResultsRenderer {
 
         // Any value may itself contain a pipe - a subject line, or the
         // recipient summary - which would otherwise split the table row.
-        const cell = (value) => String(value ?? '').replace(/\|/g, '\\|');
+        // Escape the escape character first, or a value containing a
+        // literal backslash-pipe survives as an unescaped pipe and still
+        // splits the row.
+        const cell = (value) => String(value ?? '')
+            .replace(/\\/g, '\\\\')
+            .replace(/\|/g, '\\|');
 
         const lines = [
             `## ${t('Artifacts')}${filename ? ' - ' + filename : ''}`,

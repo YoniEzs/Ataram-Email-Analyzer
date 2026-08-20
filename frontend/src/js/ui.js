@@ -510,9 +510,9 @@ class UIController {
                     <span class="pill ${cls}" style="min-width:70px; text-align:center;">${this._escapeHtml(t(entry.risk_level || 'unknown'))}</span>
                     <div class="history-item-main">
                         <div class="history-item-name">${this._escapeHtml(entry.filename)}</div>
-                        <div class="history-item-date">${date}</div>
+                        <div class="history-item-date">${this._escapeHtml(date)}</div>
                     </div>
-                    <span class="history-item-score">${entry.risk_score}/100</span>
+                    <span class="history-item-score">${this._escapeHtml(String(entry.risk_score ?? ''))}/100</span>
                 </div>
             `;
         }).join('');
