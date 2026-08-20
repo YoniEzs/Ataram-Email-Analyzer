@@ -3,8 +3,13 @@
  *
  * Layout: a summary-first verdict header, the key "official artifacts"
  * conclusion, a "why this score" breakdown, severity-ordered findings, and
- * the full detail split across tabs. Copy buttons and one-click lookups let
- * an analyst pivot IPs/domains/hashes into VirusTotal / AbuseIPDB / Google.
+ * the full detail split across tabs.
+ *
+ * Attachments and URLs deliberately carry no outbound lookup links: files and
+ * URLs are checked with open-source tooling only, and the tool never hands a
+ * hash or a URL to a third party on the analyst's behalf. Copy the value and
+ * pivot deliberately if you want that. Sender-IP and domain reputation links
+ * remain, since those describe infrastructure rather than the message payload.
  */
 
 class ResultsRenderer {
@@ -694,10 +699,7 @@ class ResultsRenderer {
                     <div class="url-issues">
                         ${url.issues.map(issue => `<span class="pill danger">${this.escapeHtml(issue)}</span>`).join('')}
                     </div>` : ''}
-                <div class="value-actions">
-                    ${this.copyBtn(url.url)}
-                    ${url.domain ? this.extBtn(`https://www.virustotal.com/gui/domain/${encodeURIComponent(url.domain)}`, 'VirusTotal') : ''}
-                </div>
+                <div class="value-actions">${this.copyBtn(url.url)}</div>
             </div>
         `).join('');
 
@@ -723,7 +725,7 @@ class ResultsRenderer {
     }
 
     /**
-     * Render attachments (with hash copy + VirusTotal lookup)
+     * Render attachments (hash copy only - see the module note on pivots)
      */
     renderAttachments(attachments) {
         if (!attachments || attachments.total_count === 0) {
@@ -756,7 +758,7 @@ class ResultsRenderer {
                         <div class="url-issues" style="margin-top: 0.5rem;">
                             ${att.issues.map(issue => `<span class="pill danger">${this.escapeHtml(issue)}</span>`).join('')}
                         </div>` : ''}
-                    ${att.sha256 ? `<div class="value-actions">${this.copyBtn(att.sha256)}${this.extBtn(`https://www.virustotal.com/gui/file/${encodeURIComponent(att.sha256)}`, 'VirusTotal')}</div>` : ''}
+                    ${att.sha256 ? `<div class="value-actions">${this.copyBtn(att.sha256)}</div>` : ''}
                 </div>
                 ${att.severity && att.is_suspicious ? `<span class="attachment-severity ${this.escapeHtml(att.severity)}">${this.escapeHtml(t(att.severity))}</span>` : ''}
             </div>

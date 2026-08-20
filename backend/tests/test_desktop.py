@@ -57,6 +57,18 @@ def test_find_webui_prefers_bundled_copy(tmp_path, monkeypatch):
     assert desktop.find_webui() == bundled
 
 
+def test_find_webui_survives_a_shallow_path(monkeypatch):
+    """A frozen build unzipped to a drive root has very few path parents.
+
+    The repo-checkout candidate used to be built eagerly with ``parents[2]``,
+    which raised IndexError before the bundled candidate could be consulted --
+    so 'Extract Here' onto D:\\ or a USB stick crashed the app at startup.
+    """
+    monkeypatch.setattr(desktop, '__file__', '/desktop.py')
+    monkeypatch.delattr(desktop.sys, '_MEIPASS', raising=False)
+    assert desktop.find_webui() is None
+
+
 def test_missing_webui_returns_error_not_crash(monkeypatch):
     monkeypatch.setattr(desktop, 'find_webui', lambda: None)
     assert desktop.main() == 1

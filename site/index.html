@@ -78,7 +78,7 @@
       network traffic is DNS/RDAP lookups of header-derived IPs and domains, and
       every one of them can be switched off for fully offline work.
     </p>
-    <a class="btn" href="https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest">Download</a>
+    <a class="btn" href="https://github.com/YoniEzs/Ataram-Email-Analyzer/releases">Download</a>
   </header>
 
   <h2>What it gives you</h2>
@@ -107,7 +107,7 @@
   </div>
 
   <div class="panel active" id="win">
-    <pre><code>1. Download AtaramEmailAnalyzer-…-windows-x64.zip from the Releases page
+    <pre><code>1. Download AtaramEmailAnalyzer-v0.1.0-rc1-windows-x64.zip from the Releases page
 2. Extract anywhere and run AtaramEmailAnalyzer.exe
 3. Your browser opens at http://127.0.0.1:8321 — drop an .eml file in</code></pre>
     <p>The binaries are unsigned, so SmartScreen will warn on first run: choose
@@ -116,30 +116,35 @@
     from the open source.</p>
   </div>
   <div class="panel" id="mac">
-    <pre><code>curl -LO https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest/download/AtaramEmailAnalyzer-macos-arm64.zip
-unzip AtaramEmailAnalyzer-macos-arm64.zip
+    <pre><code>curl -LO https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/download/v0.1.0-rc1/AtaramEmailAnalyzer-v0.1.0-rc1-macos-arm64.zip
+unzip AtaramEmailAnalyzer-v0.1.0-rc1-macos-arm64.zip
 ./AtaramEmailAnalyzer/AtaramEmailAnalyzer</code></pre>
     <p>Unsigned build: on first run, right-click the binary and choose Open, or allow
     it under System Settings &rarr; Privacy &amp; Security.</p>
   </div>
   <div class="panel" id="linux">
-    <pre><code>curl -LO https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest/download/AtaramEmailAnalyzer-linux-x64.zip
-unzip AtaramEmailAnalyzer-linux-x64.zip
+    <pre><code>curl -LO https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/download/v0.1.0-rc1/AtaramEmailAnalyzer-v0.1.0-rc1-linux-x64.zip
+unzip AtaramEmailAnalyzer-v0.1.0-rc1-linux-x64.zip
 ./AtaramEmailAnalyzer/AtaramEmailAnalyzer</code></pre>
     <p>Opens your browser at <code>http://127.0.0.1:8321</code>. Headless? Set
     <code>ATARAM_NO_BROWSER=1</code> and browse to the printed URL.</p>
   </div>
   <div class="panel" id="docker">
     <pre><code>curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
-docker compose -f docker-compose.release.yml up</code></pre>
+ATARAM_VERSION=0.1.0-rc1 docker compose -f docker-compose.release.yml up</code></pre>
     <p>Then open <code>http://localhost:3000</code>. The full stack — hardened
-    containers, Redis-backed caching — for teams or always-on use.</p>
+    containers, Redis-backed caching — for teams or always-on use.
+    <code>ATARAM_VERSION</code> is required while only a release candidate
+    exists: the <code>:latest</code> image tag is published for stable
+    releases only.</p>
   </div>
   <div class="panel" id="pipx">
-    <pre><code>pipx install ataram-email-analyzer
-ataram-analyzer</code></pre>
-    <p>Requires Python 3.11+. Installs an isolated environment and opens the
-    browser on launch.</p>
+    <pre><code># Not yet available — planned for the stable v0.1.0 release
+pipx install ataram-email-analyzer</code></pre>
+    <p><strong>Not published yet.</strong> The package is built and the
+    <code>ataram-analyzer</code> entry point works, but it has not been
+    uploaded to PyPI, so this command will fail today. Use the desktop
+    download or Docker for now.</p>
   </div>
 
   <h2>Try it in ten seconds</h2>

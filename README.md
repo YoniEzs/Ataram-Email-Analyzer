@@ -20,8 +20,12 @@ and malicious-email indicators.
 - Inspects attachment names, magic bytes, hashes and ZIP metadata without
   extracting archives.
 - Runs bounded YARA scans against message and attachment bytes.
-- Optionally checks sender IPs with AbuseIPDB and attachment hashes with
-  VirusTotal.
+- Checks URLs and attachments with open-source tooling only, and never runs
+  them: a URL is parsed, never requested, and an attachment is hashed and
+  inspected, never executed or extracted to disk. Analysing a phishing message
+  therefore cannot reach attacker infrastructure or disclose your IP to it.
+- Optionally checks sender IPs with AbuseIPDB, and attachment hashes with
+  VirusTotal when you explicitly enable it (off by default).
 - Looks up SPF, DKIM and DMARC DNS records and domain-registration data via RDAP.
 - Independently verifies DKIM when raw MIME bytes are available.
 - Provides an English/Hebrew interface, JSON export, printable reports and a
@@ -127,21 +131,35 @@ Either way, try the synthetic messages in [`samples/`](samples/) — each
 documents the exact verdict it should produce, and those verdicts are enforced
 by `backend/tests/test_samples_regression.py`.
 
-### From a published release (not yet available)
+### From a published release
 
-> **These three paths do not work yet.** No version has been tagged, so no
-> release artifacts and no PyPI package exist. They are the intended
-> distribution channels from `v0.1.0` onward, listed here so the plan is
-> visible — use a source checkout until then.
+**Desktop app (Windows / macOS / Linux)** — download the zip for your OS from
+the [releases page](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases),
+extract, run `AtaramEmailAnalyzer`. Your browser opens by itself. Binaries are
+unsigned; verify downloads against the release's `SHA256SUMS.txt`.
 
-- **Desktop app** — download the zip for your OS from the
-  [latest release](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest),
-  extract, run `AtaramEmailAnalyzer`. Binaries are unsigned; verify downloads
-  against the release's `SHA256SUMS.txt`.
-- **pipx** (Python 3.11+) — `pipx install ataram-email-analyzer && ataram-analyzer`.
-- **Docker, from published images** — `docker compose -f docker-compose.release.yml up`
-  (requires `ATARAM_VERSION`, since `:latest` is only published for stable
-  releases).
+Note the releases *list*, not `/releases/latest` — the latter excludes
+prereleases, so it resolves to nothing while only a release candidate exists.
+
+**Docker, from published images** — no build step:
+
+```bash
+curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
+ATARAM_VERSION=0.1.0-rc1 docker compose -f docker-compose.release.yml up
+```
+
+`ATARAM_VERSION` is required while only a release candidate exists — the
+`:latest` image tag is published for stable releases only.
+
+**pipx** (Python 3.11+) — *not published yet, planned for stable v0.1.0*:
+
+```bash
+# This will not work until the package is uploaded to PyPI.
+pipx install ataram-email-analyzer
+```
+
+Nothing publishes `ataram-email-analyzer` to PyPI yet, so use a source
+checkout, the desktop download or Docker until then.
 
 The desktop and pipx builds bind to `127.0.0.1` only and serve the UI and API
 from one process; the Docker stack is the hardened multi-container deployment

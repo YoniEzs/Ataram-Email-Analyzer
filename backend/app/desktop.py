@@ -45,10 +45,14 @@ def _configure_environment() -> None:
 
 def find_webui() -> Optional[Path]:
     """Locate the static UI: bundled copy first, repo checkout second."""
-    candidates = [
-        Path(__file__).resolve().parent / 'webui',            # packaged
-        Path(__file__).resolve().parents[2] / 'frontend' / 'src',  # repo
-    ]
+    here = Path(__file__).resolve()
+    candidates = [here.parent / 'webui']                      # packaged
+    # Only meaningful in a source checkout. Guarded because `parents[2]` does
+    # not exist when this module sits near a filesystem root -- exactly where
+    # a frozen build lands if the user extracts the zip to a drive root, and
+    # the IndexError would fire before the bundled candidate below is tried.
+    if len(here.parents) > 2:
+        candidates.append(here.parents[2] / 'frontend' / 'src')  # repo
     bundle_root = getattr(sys, '_MEIPASS', None)              # PyInstaller
     if bundle_root:
         candidates.insert(0, Path(bundle_root) / 'app' / 'webui')
@@ -110,7 +114,10 @@ def main() -> int:
     port = _free_port(int(os.environ.get('ATARAM_PORT', DEFAULT_PORT)))
     url = f'http://127.0.0.1:{port}'
 
-    print(f'Ataram Email Analyzer running at {url}  (Ctrl+C to quit)')
+    # flush: stdout is block-buffered when redirected to a file or pipe,
+    # and serve() below never returns, so without this the URL would stay
+    # stuck in the buffer for anyone capturing output.
+    print(f'Ataram Email Analyzer running at {url}  (Ctrl+C to quit)', flush=True)
     if os.environ.get('ATARAM_NO_BROWSER', '').lower() not in ('1', 'true'):
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
 
