@@ -193,3 +193,74 @@ def test_a_real_subdomain_of_a_gateway_still_unwraps():
 
     assert wrapper == 'Microsoft Safe Links'
     assert real == 'https://evil.example.com/p'
+
+
+# ---------------------------------------------------------------------------
+# Mail-platform infrastructure
+#
+# The line is *who put the link there*, not whether the domain is reputable.
+# Outlook adds its own sender-identification footer and the recipient's tenant
+# adds the Safe Links wrapper; the sender chose neither and controls neither.
+# An ESP is the opposite case: the sender picked it, and it hosts phishing
+# every day, so it gets no exemption.
+# ---------------------------------------------------------------------------
+
+def test_microsoft_platform_links_are_excluded_and_not_bulk_copyable():
+    """Exported links feed blocklists.
+
+    Blocking aka.ms or a tenant's own Safe Links breaks Outlook for the whole
+    organisation, so these must never travel in a bulk copy.
+    """
+    result = URLAnalyzerService().analyze_single_url(
+        'https://aka.ms/LearnAboutSenderIdentification',
+        sender_domain='cdn-online.com',
+    )
+
+    assert result['is_platform_infrastructure'] is True
+    assert result['safe_to_bulk_copy'] is False
+    assert result['is_suspicious'] is False
+
+
+def test_an_esp_gets_no_exemption():
+    """SendGrid is the sender's own choice of infrastructure."""
+    result = URLAnalyzerService().analyze_single_url(
+        'https://u11463929.ct.sendgrid.net/ls/click?upn=abc',
+        sender_domain='cdn-online.com',
+    )
+
+    assert result['is_platform_infrastructure'] is False
+    assert result['safe_to_bulk_copy'] is True
+
+
+def test_a_wrapped_link_is_judged_by_its_destination():
+    """Safe Links is platform infrastructure; what it points at may not be.
+
+    The target is exactly what belongs in a blocklist, so classifying the
+    wrapper instead of the destination would hide it.
+    """
+    result = URLAnalyzerService().analyze_single_url(
+        'https://eur02.safelinks.protection.outlook.com/'
+        '?url=https%3A%2F%2Fu1.ct.sendgrid.net%2Fls%2Fclick',
+        sender_domain='cdn-online.com',
+    )
+
+    assert result['is_platform_infrastructure'] is False
+    assert result['safe_to_bulk_copy'] is True
+    assert result['url'] == 'https://u1.ct.sendgrid.net/ls/click'
+
+
+def test_a_wrapped_link_pointing_back_at_the_platform_stays_excluded():
+    result = URLAnalyzerService().analyze_single_url(
+        'https://eur02.safelinks.protection.outlook.com/?url=https%3A%2F%2Faka.ms%2Ffoo'
+    )
+
+    assert result['is_platform_infrastructure'] is True
+    assert result['safe_to_bulk_copy'] is False
+
+
+def test_a_lookalike_of_a_platform_domain_is_not_exempt():
+    """`aka.ms.evil.test` must not inherit aka.ms's exemption."""
+    result = URLAnalyzerService().analyze_single_url('https://notaka.ms.evil.test/x')
+
+    assert result['is_platform_infrastructure'] is False
+    assert result['safe_to_bulk_copy'] is True
