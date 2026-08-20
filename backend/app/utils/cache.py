@@ -99,9 +99,8 @@ class RedisCache:
     def get(self, key: str) -> Optional[Any]:
         try:
             raw = self._client.get(self._PREFIX + key)
-            # redis-py types get() as possibly-awaitable; the sync client
-            # always returns bytes/None here.
-            return json.loads(raw) if raw is not None else None  # type: ignore[arg-type]
+            # redis-py's sync client returns bytes/str/None here.
+            return json.loads(raw) if raw is not None else None
         except Exception as e:
             logger.warning(f"[RedisCache] get failed for {key}: {e}")
             return None

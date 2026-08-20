@@ -1,6 +1,6 @@
 # Privacy and Data Flow
 
-Last updated: 2026-07-12
+Last updated: 2026-08-18
 
 Ataram Email Analyzer processes potentially sensitive email evidence. This
 document describes the software's intended behavior; it cannot control logging,
@@ -41,9 +41,36 @@ content and attachments are not placed in analysis history.
 | RDAP | Sender domain | Yes (`ENABLE_WHOIS`) |
 | AbuseIPDB | Public IP extracted from untrusted headers and API key | Only when a key is present |
 | VirusTotal | Attachment SHA-256 hash and API key; never attachment bytes | No |
+| Reverse DNS | Sending IP, as a PTR query, plus the resulting host name | Yes (`ENABLE_REVERSE_DNS`) |
+| Team Cymru | Sending IP, encoded in the DNS query name | Yes (`ENABLE_ASN_LOOKUP`) |
+| RDAP (IP) | Sending IP | Yes (`ENABLE_IP_RDAP`) |
+| MX lookup | Sender domain | No (`ENABLE_MX_LOOKUP`) |
+| Advisory SPF | Sender domain and the SPF records it references | No (`ENABLE_SPF_ADVISORY`) |
 
-The bundled YARA rules, keyword analysis, attachment inspection and Public
-Suffix List parsing run locally in the backend process.
+The bundled YARA rules, keyword analysis, attachment inspection, freemail and
+disposable-domain lists, and Public Suffix List parsing all run locally in the
+backend process.
+
+### The sending IP is not always the attacker's
+
+The four IP-based lookups above disclose an address taken from the message's
+`Received` headers. That address is frequently **your own** infrastructure: an
+internally forwarded message, an on-premises relay, a mail gateway or a VPN
+egress. Enabling these lookups therefore publishes internal infrastructure
+addresses to third-party DNS and RDAP operators, not only the addresses of
+suspected senders. Private and reserved ranges are never queried, but a
+publicly routable address belonging to your organization will be.
+
+Weigh this against the analytical value before enabling them in an environment
+where the shape of your mail infrastructure is itself sensitive.
+
+### Exported artifacts
+
+The artifacts block and its "Copy Artifacts" export include the envelope
+recipients recovered from `Delivered-To` and related headers, which is how a
+Bcc delivery is inferred. That is the analyst's own mailbox address, and it
+travels with the exported text into whatever ticketing system it is pasted
+into. Review the block before sharing it outside your team.
 
 ## Offline or sensitive analysis
 
@@ -54,7 +81,16 @@ ENABLE_WHOIS=false
 ENABLE_ABUSEIPDB=false
 ENABLE_VIRUSTOTAL=false
 ENABLE_AUTH_VERIFICATION=false
+ENABLE_REVERSE_DNS=false
+ENABLE_IP_RDAP=false
+ENABLE_ASN_LOOKUP=false
+ENABLE_MX_LOOKUP=false
+ENABLE_SPF_ADVISORY=false
 ```
+
+With those disabled the artifacts block is still produced in full; only its
+`enrichment` fields are empty, each carrying an `enrichment_status` of
+`disabled` so the report says why rather than looking like a failed lookup.
 
 Independent DKIM verification also performs DNS lookups, so disable it for a
 strictly offline environment. Use a locally controlled DNS resolver and deploy

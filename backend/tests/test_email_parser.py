@@ -41,3 +41,22 @@ def test_preserves_normal_top_level_message():
 
     assert result['headers']['subject'] == 'Normal message'
     assert result['body_text'].strip() == 'Normal body'
+
+
+def test_oversized_header_is_bounded_in_the_response():
+    """A header-bomb file must not inflate the parsed output.
+
+    A 100 KB Subject previously reflected verbatim, producing a ~500 KB
+    response. decode_header now caps any single header at MAX_HEADER_CHARS.
+    """
+    from app.services.email_parser import MAX_HEADER_CHARS, EmailParserService
+
+    raw = (
+        b"From: qa@sender.com\r\nTo: v@company.example\r\n"
+        b"Subject: " + b"A" * 100_000 + b"\r\n"
+        b"Date: Mon, 06 Jul 2026 09:00:00 +0000\r\n\r\nbody\r\n"
+    )
+    parsed = EmailParserService().parse_email(raw, "bomb.eml")
+    subject = parsed["headers"]["subject"]
+    assert len(subject) <= MAX_HEADER_CHARS + 16
+    assert subject.endswith("[truncated]")

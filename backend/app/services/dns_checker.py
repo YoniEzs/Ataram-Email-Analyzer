@@ -3,15 +3,24 @@ DNS Checker Service
 Handles SPF, DMARC, and DKIM DNS queries
 """
 
-import re
+import ipaddress
 import logging
-from typing import Optional, List
+import re
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from app.utils.cache import cache_get, cache_set
+from app.utils.validators import validate_public_ip
 
 logger = logging.getLogger(__name__)
 
+# Cached PTR values: a hostname, "" for a confirmed missing record, or this
+# sentinel for a transient resolver failure (cached briefly, never scored).
+_PTR_LOOKUP_FAILED = '!lookup-failed'
+
 try:
     import dns.resolver
+    import dns.reversename
     import dns.exception
     DNS_AVAILABLE = True
 except ImportError:
@@ -49,6 +58,149 @@ class DNSCheckerService:
         except Exception as e:
             logger.warning(f"[DNSCheckerService] Unexpected DNS error for {domain}: {e}")
             return None
+
+    def _resolve(
+        self, name: str, rdtype: str, cache_key: str, *, ttl: int = 3600,
+        limit: int = 8,
+    ) -> Optional[List[str]]:
+        """Resolve one record type into plain strings, cached and bounded."""
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            answers = dns.resolver.resolve(name, rdtype, lifetime=self.timeout)
+            records = []
+            for rdata in answers:
+                if rdtype == 'MX':
+                    value = str(getattr(rdata, 'exchange', '')).rstrip('.').lower()
+                elif rdtype == 'PTR':
+                    value = str(getattr(rdata, 'target', rdata)).rstrip('.').lower()
+                else:
+                    value = str(getattr(rdata, 'address', rdata))
+                if value:
+                    records.append(value)
+                if len(records) >= limit:
+                    break
+            cache_set(cache_key, records, ttl)
+            return records
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            # Authoritative absence is evidence and may be cached and scored;
+            # a timeout or dead resolver (below) is not.
+            cache_set(cache_key, [], ttl)
+            return []
+        except dns.exception.DNSException:
+            return None
+        except Exception as e:
+            logger.warning(
+                f"[DNSCheckerService] Unexpected {rdtype} error for {name}: {e}"
+            )
+            return None
+
+    def get_ptr_records(self, ip: str) -> Optional[List[str]]:
+        """Reverse-DNS names for a public IP, newest lookup cached for an hour.
+
+        Private and reserved addresses are rejected before any query so an
+        internal Received chain never discloses RFC1918 space to the resolver.
+        """
+        if not validate_public_ip(ip):
+            return None
+        try:
+            name = dns.reversename.from_address(ip).to_text()
+        except Exception:
+            return None
+        return self._resolve(name, 'PTR', f"dns:ptr:{ip}", limit=4)
+
+    def get_host_ips(self, host: str) -> Optional[List[str]]:
+        """A and AAAA addresses for a host name."""
+        if not host:
+            return None
+        cache_key = f"dns:addr:{host}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        addresses: List[str] = []
+        for rdtype in ('A', 'AAAA'):
+            found = self._resolve(host, rdtype, f"dns:{rdtype.lower()}:{host}")
+            addresses.extend(found or [])
+        result = addresses if addresses else None
+        cache_set(cache_key, result, 3600)
+        return result
+
+    def get_mx_records(self, domain: str) -> Optional[List[str]]:
+        """Mail exchangers for a domain."""
+        if not domain:
+            return None
+        return self._resolve(domain, 'MX', f"dns:mx:{domain}")
+
+    def reverse_dns_details(self, ip: str) -> Optional[Dict[str, Any]]:
+        """Reverse DNS plus forward confirmation (FCrDNS) for a sending IP.
+
+        FCrDNS passes when the PTR name resolves forward to the same address.
+        Unlike anything read out of the message, this is a live fact about the
+        address, so it is classified as observed evidence and may be scored.
+
+        ``fcrdns`` is one of ``pass``, ``fail``, ``no_ptr`` or
+        ``lookup_failed``. Only ``fail`` is scored: an authoritative "no PTR"
+        is a low-severity note, and a resolver outage must never look like
+        evidence about the sender at all.
+        """
+        if not validate_public_ip(ip):
+            return None
+
+        cache_key = f"rdns:details:{ip}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
+        result: Dict[str, Any] = {
+            'ip': ip,
+            'ptr': [],
+            'ptr_name': None,
+            'forward_ips': {},
+            'fcrdns': 'no_ptr',
+            'source': 'live_dns',
+            'checked_at': datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Reuse the cheap PTR lookup so an IP is resolved once and both
+        # methods share the same `ptr:` cache entry, including its negative
+        # sentinel. Forward confirmation is conventionally about *the* PTR
+        # name, so only the primary name is confirmed.
+        ptr_name = self.reverse_dns(ip)
+        if not ptr_name:
+            # Distinguish "confirmed no PTR" from "resolver unreachable" via
+            # the shared PTR cache the lookup above just populated.
+            if cache_get(f"ptr:{ip}") == _PTR_LOOKUP_FAILED:
+                result['fcrdns'] = 'lookup_failed'
+                cache_set(cache_key, result, 300)
+            else:
+                cache_set(cache_key, result, 3600)
+            return result
+
+        result['ptr'] = [ptr_name]
+        result['ptr_name'] = ptr_name
+
+        try:
+            target = ipaddress.ip_address(ip)
+        except ValueError:
+            return result
+
+        forward = self.get_host_ips(ptr_name) or []
+        result['forward_ips'][ptr_name] = forward
+        confirmed = False
+        for address in forward:
+            try:
+                if ipaddress.ip_address(address) == target:
+                    confirmed = True
+                    break
+            except ValueError:
+                continue
+
+        result['fcrdns'] = 'pass' if confirmed else 'fail'
+        cache_set(cache_key, result, 3600)
+        return result
 
     def check_spf(self, domain: str) -> Optional[str]:
         """Check SPF record for domain"""
@@ -102,3 +254,56 @@ class DNSCheckerService:
             if re.search(r'(?:^|;)\s*p=', record):
                 return record
         return None
+
+    def reverse_dns(self, ip: str) -> Optional[str]:
+        """Resolve the PTR (reverse DNS) hostname for an IP address.
+
+        Returns the first PTR hostname (without the trailing dot) or None
+        when the address has no PTR record or the lookup fails. Results are
+        cached, including "no record", so repeat lookups don't re-query DNS.
+
+        This stays a single PTR query. Forward confirmation lives in
+        :meth:`reverse_dns_details`, which builds on this and costs more, so
+        callers that only need the hostname do not pay for it.
+
+        Non-public addresses are rejected before any query, so an internal
+        Received chain cannot disclose RFC1918 space to the resolver.
+        """
+        if not ip or not validate_public_ip(ip):
+            return None
+
+        cache_key = f"ptr:{ip}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            # "" is the cached sentinel for a confirmed "no PTR record";
+            # _PTR_LOOKUP_FAILED marks a transient resolver failure.
+            if cached == _PTR_LOOKUP_FAILED:
+                return None
+            return cached or None
+
+        try:
+            rev_name = dns.reversename.from_address(ip)
+            answers = dns.resolver.resolve(rev_name, 'PTR', lifetime=self.timeout)
+            # Only PTR rdata carries a target; guard so a non-PTR answer in
+            # the set can't raise (the generic Rdata type has no .target).
+            hostnames = []
+            for rdata in answers:
+                target = getattr(rdata, 'target', None)
+                if target is not None:
+                    hostnames.append(str(target).rstrip('.'))
+            result = hostnames[0] if hostnames else None
+            cache_set(cache_key, result or "", 3600)
+            return result
+        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
+            # Authoritative: the address genuinely has no PTR record.
+            cache_set(cache_key, "", 3600)
+            return None
+        except dns.exception.DNSException:
+            # Transient resolver failure — cache briefly so a burst of
+            # lookups doesn't hammer a dead resolver, but never let it look
+            # like a confirmed absence.
+            cache_set(cache_key, _PTR_LOOKUP_FAILED, 300)
+            return None
+        except Exception as e:
+            logger.warning(f"[DNSCheckerService] Reverse DNS error for {ip}: {e}")
+            return None

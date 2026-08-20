@@ -8,6 +8,7 @@ from flask import Blueprint, request, jsonify, current_app
 from werkzeug.exceptions import HTTPException
 from werkzeug.utils import secure_filename
 
+from app.api.openapi import API_VERSION
 from app.services.email_parser import EmailParserService
 from app.services.email_analyzer import EmailAnalyzerService
 from app.utils.validators import (
@@ -139,13 +140,19 @@ def analyze_email():
             dns_timeout=current_app.config.get('DNS_TIMEOUT', 5),
             whois_timeout=current_app.config.get('WHOIS_TIMEOUT', 10),
             http_timeout=current_app.config.get('HTTP_TIMEOUT', 10),
+            enable_reverse_dns=current_app.config.get('ENABLE_REVERSE_DNS', True),
+            enable_ip_rdap=current_app.config.get('ENABLE_IP_RDAP', True),
+            enable_asn_lookup=current_app.config.get('ENABLE_ASN_LOOKUP', True),
+            enable_spf_advisory=current_app.config.get('ENABLE_SPF_ADVISORY', False),
+            enable_mx_lookup=current_app.config.get('ENABLE_MX_LOOKUP', False),
+            spf_timeout=current_app.config.get('SPF_TIMEOUT', 8),
         )
         analysis_result = analyzer.analyze(parsed_data)
 
         analysis_result['metadata'] = {
             'filename': filename,
             'analyzed_at': analysis_result.get('timestamp'),
-            'version': '2.0',
+            'version': API_VERSION,
         }
 
         current_app.logger.info('Analysis complete')

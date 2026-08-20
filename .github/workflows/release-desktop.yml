@@ -1,0 +1,165 @@
+name: Release Desktop Builds
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Also build on PRs that can change the binary. The release job below is
+  # guarded on a v* ref, so a PR run builds and smoke-tests all three
+  # platforms and publishes nothing. Without this the Windows and macOS
+  # binaries would first be exercised by the release itself.
+  # Safe to path-filter: this is not a required status check, so an unreported
+  # run cannot block a PR the way a filtered required check would.
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/src/**'
+      - 'packaging/**'
+      - 'scripts/sync_webui.py'
+      - '.github/workflows/release-desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+          - os: macos-latest
+            label: macos-arm64
+          - os: ubuntu-latest
+            label: linux-x64
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements-prod.txt
+
+      - name: Install build dependencies
+        working-directory: backend
+        run: |
+          python -m pip install -r requirements-prod.txt waitress==3.0.2 pyinstaller==6.11.1 backports.tarfile
+
+      - name: Bundle web UI and YARA rules into the package
+        run: python scripts/sync_webui.py
+
+      - name: Build bundle
+        run: pyinstaller --noconfirm --log-level WARN --distpath dist --workpath build packaging/ataram.spec
+
+      - name: Smoke test the built binary
+        shell: bash
+        env:
+          ATARAM_NO_BROWSER: '1'
+          ATARAM_PORT: '8321'
+          # Unbuffered, or the startup banner can sit in Python's block buffer
+          # (stdout is a file here, not a tty) and the URL below never appears.
+          PYTHONUNBUFFERED: '1'
+        run: |
+          BIN=dist/AtaramEmailAnalyzer/AtaramEmailAnalyzer
+          [ "$RUNNER_OS" = "Windows" ] && BIN="$BIN.exe"
+
+          "./$BIN" > app.log 2>&1 &
+          APP_PID=$!
+
+          # Do not assume ATARAM_PORT was honoured. When the preferred port
+          # cannot bind, the app deliberately falls back to a random one --
+          # likely on Windows, which reserves TCP ranges for Hyper-V/WSL. Read
+          # the URL the app actually printed instead.
+          URL=""
+          for _ in $(seq 1 30); do
+            URL=$(grep -oE 'http://127\.0\.0\.1:[0-9]+' app.log | head -1 || true)
+            if [ -n "$URL" ] && curl -sf "$URL/health" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          if [ -z "$URL" ]; then
+            echo "The application never reported a URL. Its output was:"
+            cat app.log
+            exit 1
+          fi
+          echo "Serving at $URL"
+
+          curl -fsS "$URL/health"
+          curl -fsS "$URL/" | grep -qi ataram
+          curl -fsS -F emailfile=@samples/02-display-name-spoof.eml \
+            "$URL/api/v1/analyze" | grep -q risk_assessment
+
+          # Teardown must never fail the step: this runs under `bash -e`, and
+          # Git Bash cannot reliably signal a native Windows process.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            taskkill //IM AtaramEmailAnalyzer.exe //F >/dev/null 2>&1 || true
+          else
+            kill "$APP_PID" 2>/dev/null || true
+          fi
+
+      - name: Package archive
+        shell: bash
+        run: |
+          cd dist
+          # GITHUB_REF_NAME is "26/merge" on pull_request events, and a slash in
+          # the name makes zip treat it as a directory path. Tag refs never
+          # contain one, so release assets keep their exact v0.1.0-rc1 naming.
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          ARCHIVE="AtaramEmailAnalyzer-${VERSION//\//-}-${{ matrix.label }}.zip"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "$ARCHIVE" AtaramEmailAnalyzer >/dev/null
+          else
+            zip -qr "$ARCHIVE" AtaramEmailAnalyzer
+          fi
+          if command -v sha256sum >/dev/null; then
+            sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          else
+            shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+          fi
+          cat "$ARCHIVE.sha256"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-${{ matrix.label }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    name: Attach to GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Combine checksums
+        run: |
+          cd artifacts
+          cat *.sha256 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        with:
+          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          generate_release_notes: true
+          files: |
+            artifacts/*.zip
+            artifacts/SHA256SUMS.txt

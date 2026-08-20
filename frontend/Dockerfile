@@ -2,7 +2,7 @@
 
 # Pinned by digest for reproducible, tamper-resistant builds.
 # Dependabot (docker ecosystem) keeps this digest updated.
-FROM nginx:alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
+FROM nginx:alpine@sha256:7068961d45b07b2af510ac002e9daa63a1d3eba2111202d6768798690800fffd
 
 # Keep the pinned base identity while applying security fixes published to
 # its Alpine release channel. The signed release-image digest is the exact

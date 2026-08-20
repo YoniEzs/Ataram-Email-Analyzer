@@ -1,18 +1,16 @@
 name: Backend CI
 
+# No paths filter: these checks are required by branch protection, and a
+# path-filtered check never reports on a PR that misses its filter, leaving
+# the PR permanently "Expected" and unmergeable. Running on every push and PR
+# also keeps the base images continuously scanned -- the nginx image once went
+# five weeks without a Trivy run because a docs-only main was never rebuilt.
 on:
   push:
     branches: [main, develop]
-    paths:
-      - 'backend/**'
-      - 'frontend/src/index.html'
-      - '.github/workflows/backend-ci.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'backend/**'
-      - 'frontend/src/index.html'
-      - '.github/workflows/backend-ci.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -63,7 +61,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE: '1'
           SECRET_KEY: test-secret-key-not-for-production
           FLASK_ENV: testing
-        run: pytest -q --cov=app --cov-report=term --cov-fail-under=65
+        run: pytest -q --cov=app --cov-report=term --cov-fail-under=80
 
   docker:
     name: Backend Docker smoke test
