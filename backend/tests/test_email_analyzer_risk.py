@@ -6,7 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.services.email_analyzer import EmailAnalyzerService
+from app.services.artifact_extractor import FLAG_METADATA
+from app.services.email_analyzer import (
+    ARTIFACT_SCORE_CAP,
+    ARTIFACT_SCORE_POINTS,
+    ARTIFACT_SUSPICION_MESSAGES,
+    EmailAnalyzerService,
+)
 
 
 def make_service(whitelist_domains=None):
@@ -168,3 +174,94 @@ def test_whitelist_gives_small_discount_to_low_risk_mail():
     assert whitelist_applied is True
     assert score == 0
     assert level == 'low'
+
+
+# ---------------------------------------------------------------------------
+# Artifact flag scoring
+# ---------------------------------------------------------------------------
+
+
+def score_with_flags(*codes):
+    """Score an otherwise-clean message carrying only these artifact flags."""
+    service = make_service()
+    flags = [
+        {
+            'code': code,
+            'severity': FLAG_METADATA.get(code, {}).get('severity', 'medium'),
+            'trust': FLAG_METADATA.get(code, {}).get('trust', 'computed'),
+        }
+        for code in codes
+    ]
+    return service._calculate_risk_score(
+        auth_analysis={'spf': 'pass'},
+        abuse_data=None,
+        url_analysis={'suspicious_count': 0},
+        attachment_analysis={'suspicious_count': 0, 'attachments': []},
+        content_analysis={'urgent_phrases': []},
+        suspicions=[],
+        artifacts={'flags': flags},
+    )
+
+
+def test_every_scored_flag_is_non_forgeable():
+    """The trust model: only computed/observed evidence may move the score.
+
+    A header_claim flag is something the attacker wrote, so scoring one would
+    let a forged header raise its own verdict.
+    """
+    for code in ARTIFACT_SCORE_POINTS:
+        trust = FLAG_METADATA.get(code, {}).get('trust')
+        assert trust in {'computed', 'observed'}, (
+            f'{code} scores {ARTIFACT_SCORE_POINTS[code]} points but its trust '
+            f'is {trust!r} — only computed/observed flags may be scored'
+        )
+
+
+def test_every_scored_flag_has_analyst_wording():
+    """A scored flag with no message would show as a bare code in the UI."""
+    missing = [c for c in ARTIFACT_SCORE_POINTS if c not in ARTIFACT_SUSPICION_MESSAGES]
+    assert not missing, f'scored flags without suspicion wording: {missing}'
+
+
+def test_display_name_spoof_scores():
+    """Regression: the classic display-name spoof was worth 0 points."""
+    score, _, _, factors = score_with_flags('display_name_domain_mismatch')
+    assert score == ARTIFACT_SCORE_POINTS['display_name_domain_mismatch']
+    assert any('display name' in f['label'].lower() for f in factors)
+
+
+def test_artifact_points_are_capped():
+    """Header forensics alone must never dominate the verdict."""
+    score, _, _, factors = score_with_flags(*ARTIFACT_SCORE_POINTS)
+    assert score == ARTIFACT_SCORE_CAP
+    assert sum(f['points'] for f in factors) == ARTIFACT_SCORE_CAP
+
+
+def test_cap_is_spent_on_the_strongest_evidence_first():
+    """Extraction order must not decide which evidence counts.
+
+    Two 2-point flags are passed ahead of a 5-point one with a 6-point budget
+    left after them; without ordering the 5-pointer would be truncated.
+    """
+    weak = [c for c, p in ARTIFACT_SCORE_POINTS.items() if p == 2]
+    strong = [c for c, p in ARTIFACT_SCORE_POINTS.items() if p == 5]
+    assert weak and strong, 'weight table changed — update this test'
+
+    _, _, _, factors = score_with_flags(*weak, *strong)
+    scored = [f['points'] for f in factors]
+    # Highest-value factors are recorded first and none of them is truncated.
+    assert scored == sorted(scored, reverse=True)
+    assert scored[0] == 5
+
+
+def test_flags_absent_from_the_weight_table_add_nothing():
+    """Reported-but-unscored flags stay at zero.
+
+    ``message_id_domain_differs_from_sender`` fires on every ESP-sent message;
+    scoring it would flag most legitimate mail.
+    """
+    score, _, _, factors = score_with_flags(
+        'message_id_domain_differs_from_sender', 'freemail_sender'
+    )
+    assert score == 0
+    assert factors == []
