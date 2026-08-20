@@ -123,7 +123,17 @@ jobs:
           provenance: mode=max
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pinned deliberately. The installer's own default moved from Cosign
+          # v2.5.2 to v3.0.6 in this bump, and v3 changes the signature bundle
+          # format that `cosign sign` writes -- so an unpinned upgrade would
+          # silently change what a released image is signed with, on a path
+          # that has never actually run. Staying on the v2 line keeps the
+          # first real release identical to what this workflow was written
+          # and reviewed against. Moving to v3 is a one-line change here,
+          # worth making once someone has verified an image end to end.
+          cosign-release: 'v2.6.5'
 
       - name: Sign image digest
         env:
@@ -210,7 +220,17 @@ jobs:
           provenance: mode=max
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pinned deliberately. The installer's own default moved from Cosign
+          # v2.5.2 to v3.0.6 in this bump, and v3 changes the signature bundle
+          # format that `cosign sign` writes -- so an unpinned upgrade would
+          # silently change what a released image is signed with, on a path
+          # that has never actually run. Staying on the v2 line keeps the
+          # first real release identical to what this workflow was written
+          # and reviewed against. Moving to v3 is a one-line change here,
+          # worth making once someone has verified an image end to end.
+          cosign-release: 'v2.6.5'
 
       - name: Sign image digest
         env:
