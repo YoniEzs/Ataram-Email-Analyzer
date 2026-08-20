@@ -879,12 +879,34 @@ class ResultsRenderer {
      * of copying one is to paste it into a sandbox.
      */
     defang(value) {
+        // Deliberately regex-free. The input is a URL lifted out of a hostile
+        // email, and the obvious pattern here -- scheme, then a greedy
+        // host class, then a greedy remainder -- puts two unbounded
+        // quantifiers with overlapping character classes next to each other,
+        // which is the shape CodeQL flags as polynomial ReDoS on untrusted
+        // input. Index arithmetic is linear and has no such failure mode.
         const raw = String(value || '');
         if (!raw) return '';
-        const match = raw.match(/^(https?):\/\/([^/?#]*)(.*)$/i);
-        if (!match) return raw.replace(/\./g, '[.]');
-        const scheme = match[1].toLowerCase() === 'https' ? 'hxxps' : 'hxxp';
-        return `${scheme}://${match[2].replace(/\./g, '[.]')}${match[3]}`;
+
+        const dotted = (text) => text.split('.').join('[.]');
+
+        const sep = raw.indexOf('://');
+        if (sep === -1) return dotted(raw);
+
+        const scheme = raw.slice(0, sep).toLowerCase();
+        if (scheme !== 'http' && scheme !== 'https') return dotted(raw);
+
+        const rest = raw.slice(sep + 3);
+        // The authority ends at the first '/', '?' or '#'; whichever comes
+        // first. Everything after it is path/query/fragment and stays intact
+        // so the URL is still readable.
+        let end = rest.length;
+        for (const mark of ['/', '?', '#']) {
+            const at = rest.indexOf(mark);
+            if (at !== -1 && at < end) end = at;
+        }
+        const defanged = scheme === 'https' ? 'hxxps' : 'hxxp';
+        return `${defanged}://${dotted(rest.slice(0, end))}${rest.slice(end)}`;
     }
 
     extBtn(href, label) {
