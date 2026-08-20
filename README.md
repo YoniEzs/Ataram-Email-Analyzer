@@ -104,14 +104,31 @@ Every option runs entirely locally.
 The fastest way to get the full tool — UI and API in one local process, bound
 to `127.0.0.1`:
 
+macOS / Linux:
+
 ```bash
 git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
 cd Ataram-Email-Analyzer/backend
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements-prod.txt waitress
 python -m app.desktop
 ```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
+cd Ataram-Email-Analyzer\backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-prod.txt waitress
+.\.venv\Scripts\python.exe -m app.desktop
+```
+
+On Windows, call the venv's `python.exe` directly rather than activating.
+PowerShell's execution policy blocks `Activate.ps1` on a default install,
+and `.venv\Scripts\activate` is cmd syntax that does nothing in PowerShell.
+PowerShell 5.1 also has no `&&`, so run one line at a time.
 
 A browser tab opens at `http://127.0.0.1:8321`. Set `ATARAM_NO_BROWSER=1` to
 suppress that, or `ATARAM_PORT` to pick a port.
@@ -197,12 +214,23 @@ Backend:
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 pytest -q --cov=app --cov-fail-under=80
 ruff check app tests
 mypy
+```
+
+Windows PowerShell — same steps without activating:
+
+```powershell
+cd backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check app tests
+.\.venv\Scripts\python.exe -m mypy
 ```
 
 Frontend:
