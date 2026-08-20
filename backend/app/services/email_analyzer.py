@@ -123,6 +123,19 @@ ARTIFACT_SUSPICION_MESSAGES: Dict[str, Tuple[str, str]] = {
 }
 
 
+# Severity ladder shared by the attachment analyzer, the YARA mapping and
+# _calculate_risk_score's severity_points. Ordered low to critical.
+_SEVERITY_ORDER = ('low', 'medium', 'high', 'critical')
+
+
+def _max_severity(*severities: str) -> str:
+    """Return the highest severity given, ignoring unrecognised values."""
+    ranked = [s for s in severities if s in _SEVERITY_ORDER]
+    if not ranked:
+        return 'low'
+    return max(ranked, key=_SEVERITY_ORDER.index)
+
+
 class EmailAnalyzerService:
     """Coordinates all email analysis modules"""
 
@@ -428,12 +441,21 @@ class EmailAnalyzerService:
             data = original.get('data') or b''
             if not data:
                 continue
-            matches = self.yara_scanner.scan(data)
+            matches = self.yara_scanner.scan_detailed(data)
             if matches:
-                result['yara_matches'] = matches
+                result['yara_matches'] = [m['rule'] for m in matches]
                 result['issues'].append('yara_match')
                 result['is_suspicious'] = True
-                result['severity'] = 'critical'
+                # Take the highest severity the matching rules declare, rather
+                # than forcing critical for any match at all. Critical is worth
+                # 25 points and can escalate the whole verdict, so handing that
+                # authority to every rule in YARA_RULES_PATH means one noisy
+                # third-party rule turns a legitimate attachment critical.
+                # Never lower a severity another check already established.
+                result['severity'] = _max_severity(
+                    result.get('severity', 'low'),
+                    *(m['severity'] for m in matches),
+                )
         attachment_analysis['suspicious_count'] = sum(
             1 for a in analyzed if a.get('is_suspicious')
         )
