@@ -252,6 +252,13 @@ const I18N_TRANSLATIONS = {
         'Not found': 'לא נמצא',
         'Not available': 'לא זמין',
         'Not checked': 'לא נבדק',
+        'Requires an AbuseIPDB API key': 'דורש מפתח API של AbuseIPDB',
+        'not applicable - the signature did not validate':
+            'לא רלוונטי - החתימה לא אומתה',
+        'Save as PDF': 'שמירה כ-PDF',
+        'File': 'קובץ',
+        'Report generated': 'הדוח הופק',
+        'Ataram Email Analyzer': 'Ataram Email Analyzer',
         'Not detected': 'לא זוהה',
         'Unknown': 'לא ידוע',
         'Unknown type': 'סוג לא ידוע',

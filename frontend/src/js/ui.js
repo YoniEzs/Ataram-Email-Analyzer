@@ -417,8 +417,32 @@ class UIController {
         if (!this.elements.printReportBtn) return;
         this.elements.printReportBtn.addEventListener('click', () => {
             if (!window.lastAnalysisResult) return;
+            this.fillPrintHeader(window.lastAnalysisResult);
             window.print();
         });
+    }
+
+    /**
+     * Stamp the printed report with what it is and what it describes.
+     *
+     * The browser's own header carries a URL and a page number, which say
+     * nothing useful once the PDF is filed in a ticket. Escaped rather than
+     * interpolated: the filename comes from an uploaded file and reaches
+     * innerHTML here.
+     */
+    fillPrintHeader(result) {
+        const host = document.getElementById('printHeader');
+        if (!host) return;
+        const filename = (result.metadata || {}).filename || '';
+        const risk = result.risk_assessment || {};
+        const when = new Date().toLocaleString();
+        host.innerHTML = `
+            <div class="print-title">${this._escapeHtml(t('Ataram Email Analyzer'))}</div>
+            <div>${this._escapeHtml(t('File'))}: ${this._escapeHtml(filename)}</div>
+            <div>${this._escapeHtml(t('Risk'))}: ${this._escapeHtml(String(risk.level || ''))}
+                 ${this._escapeHtml(String(risk.score ?? ''))}/100</div>
+            <div>${this._escapeHtml(t('Report generated'))}: ${this._escapeHtml(when)}</div>
+        `;
     }
 
     /**
@@ -486,9 +510,9 @@ class UIController {
                     <span class="pill ${cls}" style="min-width:70px; text-align:center;">${this._escapeHtml(t(entry.risk_level || 'unknown'))}</span>
                     <div class="history-item-main">
                         <div class="history-item-name">${this._escapeHtml(entry.filename)}</div>
-                        <div class="history-item-date">${date}</div>
+                        <div class="history-item-date">${this._escapeHtml(date)}</div>
                     </div>
-                    <span class="history-item-score">${entry.risk_score}/100</span>
+                    <span class="history-item-score">${this._escapeHtml(String(entry.risk_score ?? ''))}/100</span>
                 </div>
             `;
         }).join('');

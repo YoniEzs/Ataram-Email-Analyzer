@@ -413,7 +413,12 @@ class ResultsRenderer {
 
         // Any value may itself contain a pipe - a subject line, or the
         // recipient summary - which would otherwise split the table row.
-        const cell = (value) => String(value ?? '').replace(/\|/g, '\\|');
+        // Escape the escape character first, or a value containing a
+        // literal backslash-pipe survives as an unescaped pipe and still
+        // splits the row.
+        const cell = (value) => String(value ?? '')
+            .replace(/\\/g, '\\\\')
+            .replace(/\|/g, '\\|');
 
         const lines = [
             `## ${t('Artifacts')}${filename ? ' - ' + filename : ''}`,
@@ -557,7 +562,15 @@ class ResultsRenderer {
         const dkimClaim = this.renderAuthPill('DKIM', claims.dkim, false);
         const dmarcClaim = this.renderAuthPill('DMARC', claims.dmarc, false);
         const verifiedDkim = this.renderAuthPill('DKIM', verification.dkim, true);
-        const alignment = verification.dkim_alignment_relaxed || 'not checked';
+        // "not checked" reads like a gap in the tool. Alignment is a
+        // comparison between the signing domain and the From domain, and it
+        // is only meaningful once the signature itself validates -- so when
+        // DKIM fails there is nothing to align, and saying so is the honest
+        // answer rather than implying a step was skipped.
+        const alignment = verification.dkim_alignment_relaxed
+            || (verification.dkim === 'fail'
+                ? t('not applicable - the signature did not validate')
+                : t('not checked'));
 
         return `
             <div class="result-card">
@@ -606,7 +619,8 @@ class ResultsRenderer {
         if (!sender) return '';
 
         const abuseScore = sender.abuse_report?.abuseConfidenceScore;
-        let abusePill = `<span class="muted">${t('Not checked')}</span>`;
+        let abusePill =
+            `<span class="muted">${t('Requires an AbuseIPDB API key')}</span>`;
 
         if (abuseScore !== undefined) {
             const className = abuseScore >= 70 ? 'danger' : abuseScore > 0 ? 'warning' : 'success';

@@ -680,6 +680,41 @@ body {
         display: block !important;
     }
 
+    /* Copy and pivot buttons are controls, not content. On paper they are
+       noise, and a printed "Copy" button invites the reader to try it. */
+    .mini-btn,
+    .value-actions,
+    .card-actions {
+        display: none !important;
+    }
+
+    /* Identifies the report once it has left the screen: which file, when,
+       and by what. Without it an exported PDF is an anonymous page. */
+    .print-header {
+        display: block !important;
+        border-bottom: 2px solid #000;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    .print-header .print-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+
+    /* Links are defanged on screen and must stay that way here: this page is
+       the artifact that gets filed and forwarded. */
+    .url-link {
+        word-break: break-all;
+    }
+
+    a[href]::after {
+        content: '';
+    }
+
+    /* Never split a card across a page: a verdict or a factor cut in half is
+       unreadable in the filed PDF. */
     .result-card,
     .verdict-card,
     .factor-item {
@@ -691,4 +726,13 @@ body {
         box-shadow: none !important;
         margin-bottom: 1rem;
     }
+}
+
+@page {
+    margin: 14mm;
+}
+
+/* Populated at render time, shown only by the print stylesheet above. */
+.print-header {
+    display: none;
 }
