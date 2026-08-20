@@ -6,6 +6,7 @@ Handles parsing of EML and MSG files
 import logging
 import mimetypes
 import os
+import codecs
 import re
 from datetime import datetime
 from email import policy
@@ -124,6 +125,45 @@ class EmailParserService:
         return decoded
 
     @staticmethod
+    def _normalize_eml_bytes(data: bytes) -> bytes:
+        """Strip wrappers that real-world exports add around a raw message.
+
+        Both cases below make Python's parser fail to recognise the very first
+        header line. When that happens it reports MissingHeaderBodySeparatorDefect
+        and treats the *entire* message as a body, yielding zero headers -- so
+        every artifact reads N/A and the message scores as though nothing were
+        wrong. Observed on a genuine Outlook export.
+
+        - UTF-8 BOM: prepends bytes to the first header name.
+        - Whole message wrapped in double quotes: seen when a message is
+          round-tripped through a spreadsheet cell or a quoting export. The
+          leading quote corrupts the first Received header, losing the
+          outermost hop, which is the one nearest the receiving MTA.
+
+        UTF-16 is decoded rather than stripped: the BOM is not the only
+        problem there, every character is two bytes and the parser sees
+        interleaved NULs.
+        """
+        for bom, encoding in (
+            (codecs.BOM_UTF32_LE, 'utf-32-le'), (codecs.BOM_UTF32_BE, 'utf-32-be'),
+            (codecs.BOM_UTF16_LE, 'utf-16-le'), (codecs.BOM_UTF16_BE, 'utf-16-be'),
+        ):
+            if data.startswith(bom):
+                try:
+                    data = data[len(bom):].decode(encoding).encode('utf-8')
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    return data
+                break
+        else:
+            if data.startswith(codecs.BOM_UTF8):
+                data = data[len(codecs.BOM_UTF8):]
+
+        stripped = data.strip()
+        if len(stripped) > 1 and stripped.startswith(b'"') and stripped.endswith(b'"'):
+            data = stripped[1:-1]
+        return data
+
+    @staticmethod
     def is_probably_msg(file_bytes: bytes, filename: str) -> bool:
         """Determine if file is MSG format"""
         if filename.lower().endswith(".msg"):
@@ -147,8 +187,7 @@ class EmailParserService:
 
             if is_msg:
                 return self._parse_msg(data)
-            else:
-                return self._parse_eml(data)
+            return self._parse_eml(self._normalize_eml_bytes(data))
 
         except Exception as e:
             return {
@@ -162,6 +201,19 @@ class EmailParserService:
     def _parse_eml(self, data: bytes) -> Dict[str, Any]:
         """Parse EML format email"""
         msg = BytesParser(policy=policy.default).parsebytes(data)
+
+        # A message with no headers at all was not parsed, it was swallowed:
+        # the parser could not find the header block and treated the whole
+        # file as a body. Returning that as a normal result is the worst
+        # failure this tool has -- every artifact reads N/A, nothing trips,
+        # and the report says "no strong indicators detected" about a file it
+        # never actually read. Real mail always has headers, so treat none as
+        # an error and let the API return 400.
+        if not msg.items():
+            raise ValueError(
+                'No headers found. The file does not look like a raw email '
+                'message, or its header block is preceded by unexpected bytes.'
+            )
 
         # Outlook can export an EML whose top-level entity is only a
         # message/rfc822 container. Analyze the enclosed message when the
