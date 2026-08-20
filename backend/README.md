@@ -5,11 +5,24 @@ Flask API for bounded EML/MSG parsing and heuristic email analysis.
 ## Setup
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 cp .env.example .env
 ```
+
+Windows PowerShell:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+```
+
+On Windows, call the venv's `python.exe` directly rather than activating.
+PowerShell's execution policy blocks `Activate.ps1` on a default install,
+and `.venv\Scripts\activate` is cmd syntax that does nothing in PowerShell.
+PowerShell 5.1 also has no `&&`, so run one line at a time.
 
 A virtual environment is required rather than merely advised: `pyspf==2.0.14`
 fails to build against the patched setuptools that some system Pythons ship,

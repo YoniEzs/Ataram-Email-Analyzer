@@ -4,7 +4,7 @@ A manual test script for a full hand-check of the analyzer. Work top to bottom
 and record pass/fail per line. Every command here was executed and verified on
 a clean checkout; where a step is expected to fail today, it says so.
 
-Automated tests cover 87% of the backend (`375 tests`). This guide deliberately
+Automated tests cover 87% of the backend (`385 tests`). This guide deliberately
 concentrates on what automation *cannot* reach: the browser, real Outlook
 files, real API keys, and the deployment paths.
 
@@ -12,13 +12,32 @@ files, real API keys, and the deployment paths.
 
 ## 0. Setup
 
+macOS / Linux:
+
 ```bash
 git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
 cd Ataram-Email-Analyzer/backend
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python3 -m venv .venv
+source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
 ```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
+cd Ataram-Email-Analyzer\backend
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+```
+
+On Windows, call the venv's `python.exe` directly rather than activating.
+PowerShell's execution policy blocks `Activate.ps1` on a default install,
+and `.venv\Scripts\activate` is cmd syntax that does nothing in PowerShell.
+PowerShell 5.1 also has no `&&`, so run one line at a time.
+
+Every `pytest` / `ruff` / `mypy` command below assumes an activated venv. On
+Windows without activation, prefix each with `.\.venv\Scripts\python.exe -m`.
 
 > A virtual environment is **required**. Installing into a system Python that
 > ships a patched setuptools (Debian/Ubuntu) fails while building `pyspf`
@@ -27,7 +46,7 @@ python -m pip install -r requirements-dev.txt
 
 | # | Check | Expected | Result |
 |---|---|---|---|
-| 0.1 | `pytest -q` | `375 passed, 1 skipped`, coverage ≥ 80% | ☐ |
+| 0.1 | `pytest -q` | `385 passed, 1 skipped`, coverage ≥ 80% | ☐ |
 | 0.2 | `ruff check app tests` | `All checks passed!` | ☐ |
 | 0.3 | `mypy` | `Success: no issues found in 31 source files` | ☐ |
 
