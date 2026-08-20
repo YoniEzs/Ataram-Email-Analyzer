@@ -182,8 +182,17 @@ expect(
 expect(artifactText.includes('invoice.pdf.exe'), 'export carries the attachment name');
 expect(artifactText.includes('hxxp://evil[.]example[.]com/login?id=1'),
     'export carries the URL, defanged');
-expect(!artifactText.includes('http://evil.example.com'),
-    'export never carries a live URL');
+// Assert the invariant directly -- no exported URL line keeps a live scheme --
+// rather than probing for one known host. Checking a URL substring is also the
+// shape CodeQL flags as incomplete URL sanitization: a security control cannot
+// be built out of "does this string appear somewhere in that URL", and the
+// query cannot tell an assertion from a control.
+const exportedUrlLines = artifactText.split('\n').filter(l => l.startsWith('- h'));
+expect(exportedUrlLines.length === 1, 'export lists the one fixture URL');
+expect(
+    exportedUrlLines.every(l => l.startsWith('- hxxp')),
+    'every exported URL line is defanged, none keeps a live scheme'
+);
 
 // A message with neither attachments nor URLs must export exactly as before.
 const emptyExport = await page.evaluate(() => {
