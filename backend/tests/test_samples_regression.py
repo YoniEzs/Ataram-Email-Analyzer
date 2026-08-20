@@ -26,7 +26,7 @@ SAMPLES_DIR = Path(__file__).resolve().parents[2] / 'samples'
 # than naming codes, so only the score and level are pinned.
 DOCUMENTED = {
     '01-clean-newsletter.eml': (0, 'low', []),
-    '02-display-name-spoof.eml': (6, 'low', [
+    '02-display-name-spoof.eml': (11, 'low', [
         'display_name_domain_mismatch',
         'freemail_reply_target',
         'reply_prefix_without_thread_headers',

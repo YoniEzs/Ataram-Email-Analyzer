@@ -13,7 +13,7 @@ rise further.
 | Sample | What it demonstrates | Artifact flags raised | Offline score |
 |---|---|---|---|
 | `01-clean-newsletter.eml` | A benign baseline — nothing fires | none | 0 (low) |
-| `02-display-name-spoof.eml` | Display name impersonates the victim's own IT helpdesk while the real sender is elsewhere; Reply-To diverts to consumer webmail; "Re:" subject with no thread headers | `display_name_domain_mismatch`, `freemail_reply_target`, `reply_to_differs_from_sender`, `reply_prefix_without_thread_headers` | 6 (low) |
+| `02-display-name-spoof.eml` | Display name impersonates the victim's own IT helpdesk while the real sender is elsewhere; Reply-To diverts to consumer webmail; "Re:" subject with no thread headers | `display_name_domain_mismatch`, `freemail_reply_target`, `reply_to_differs_from_sender`, `reply_prefix_without_thread_headers` | 11 (low) |
 | `03-homograph-sender.eml` | Sender domain mixes Cyrillic into a Latin name (`exаmple-bank.com`) — visually identical, technically different | `homoglyph_sender_domain` | 9 (low) |
 | `04-bcc-delivery.eml` | `Delivered-To` names a mailbox absent from To/Cc — the message arrived via BCC | `possible_bcc_delivery`, `reply_prefix_without_thread_headers` | 0 (low) |
 | `05-zip-double-extension.eml` | ZIP attachment containing `invoice_8841.pdf.exe` — the classic double-extension lure | attachment flagged critical | 25 (medium) |

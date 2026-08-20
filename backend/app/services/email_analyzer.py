@@ -57,6 +57,47 @@ ARTIFACT_SCORE_POINTS: Dict[str, int] = {
     'sender_domain_has_no_mx': 4,
     'date_before_first_hop': 3,
     'date_after_last_hop': 3,
+
+    # --- added after an audit found 20 of 27 scoreable flags worth nothing ---
+    #
+    # The flags below were reported to the analyst and then contributed zero,
+    # so the number under the verdict disagreed with the findings listed
+    # beside it. Weights are set by parity with the flags already here, and
+    # deliberately not by severity alone: what matters is whether a flag also
+    # fires on ordinary mail.
+    #
+    # The classic display-name spoof -- "IT Helpdesk <attacker@evil.tk>".
+    # The single most common technique in the set, and it scored nothing.
+    'display_name_domain_mismatch': 5,
+    # Parity with homoglyph_sender_domain above; same detection, applied to a
+    # domain seen elsewhere in the message rather than the sender.
+    'homoglyph_domain': 5,
+    # IDN spoofing. Rare in ordinary mail, so a hit is meaningful.
+    'punycode_sender_domain': 3,
+    # More than one From address: an RFC violation used to confuse clients
+    # about who actually sent the message.
+    'multiple_from_addresses': 3,
+    # Same family as zero_width and bidi_override, scored one step lower
+    # because legitimate multilingual mail does occasionally mix charsets.
+    'mixed_charsets_in_subject': 3,
+    # Parity with the two date anomalies above.
+    'received_chain_out_of_order': 3,
+    'future_dated': 3,
+    # Real signals, but throwaway domains have legitimate uses, so they sit
+    # below the forgery indicators rather than beside them.
+    'disposable_sender_domain': 2,
+    'disposable_domain': 2,
+    # Malformed and rare; a message with no From at all is not ordinary mail.
+    'no_from_header': 2,
+    #
+    # Left at zero on purpose, because each fires on ordinary mail and
+    # scoring it would rebuild the false positive just removed from URLs:
+    #   message_id_domain_differs_from_sender -- every ESP-sent message
+    #   freemail_sender                       -- every Gmail user
+    #   reply_prefix_without_thread_headers   -- forwards and several clients
+    # and these, individually too weak to move a verdict, all still reported:
+    #   empty_subject, missing_date, missing_message_id, missing_timezone,
+    #   unparseable_date, implausibly_old, no_ptr_record
 }
 ARTIFACT_SCORE_CAP = 15
 
@@ -125,6 +166,13 @@ ARTIFACT_SUSPICION_MESSAGES: Dict[str, Tuple[str, str]] = {
     ),
     'message_id_domain_differs_from_sender': (
         'headers', 'Message-ID domain differs from the sender domain'
+    ),
+    'homoglyph_domain': (
+        'urls', 'A domain in the message mixes look-alike characters'
+    ),
+    'no_from_header': ('sender', 'Message carries no From header'),
+    'disposable_domain': (
+        'sender', 'A domain in the message is a known disposable provider'
     ),
 }
 
@@ -926,7 +974,17 @@ class EmailAnalyzerService:
         # shows as the reason behind the number — points added without one
         # would leave the verdict partly unexplained.
         artifact_budget = ARTIFACT_SCORE_CAP
-        for flag in (artifacts or {}).get('flags', []):
+        # Highest-value evidence first. The budget is spent in iteration order,
+        # so while only a handful of flags scored it barely mattered; now that
+        # seventeen do, extraction order would otherwise decide which evidence
+        # counts -- a display-name spoof could be crowded out by three date
+        # anomalies that happened to be collected earlier.
+        scored_flags = sorted(
+            (f for f in (artifacts or {}).get('flags', [])
+             if ARTIFACT_SCORE_POINTS.get(f.get('code', ''), 0)),
+            key=lambda f: -ARTIFACT_SCORE_POINTS[f['code']],
+        )
+        for flag in scored_flags:
             code = flag.get('code', '')
             points = ARTIFACT_SCORE_POINTS.get(code, 0)
             if not points or artifact_budget <= 0:
