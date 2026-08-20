@@ -47,6 +47,12 @@ logger = logging.getLogger(__name__)
 ARTIFACT_SCORE_POINTS: Dict[str, int] = {
     'fcrdns_fail': 5,
     'bidi_override_in_subject': 5,
+    # Same attack as the bidi override beside it -- invisible Unicode placed
+    # in the subject to break keyword matching and mislead the reader -- and
+    # the registry gives both the same trust. Being absent here meant a
+    # subject stuffed with zero-width characters was reported and then scored
+    # as nothing.
+    'zero_width_in_subject': 5,
     'homoglyph_sender_domain': 5,
     'sender_domain_has_no_mx': 4,
     'date_before_first_hop': 3,

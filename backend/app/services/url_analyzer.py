@@ -28,6 +28,15 @@ _TRAILING_JUNK = re.compile(r'[.,;:!?)>\]]+$')
 class URLAnalyzerService:
     """Service for analyzing URLs in email content"""
 
+    # Reported, never counted toward "suspicious". This fires on any link
+    # whose registered domain is not the sender's, which is true of virtually
+    # every legitimate bulk message: the ESP that sent it, the tracking and
+    # unsubscribe links, the provider's own footer. At five points each it was
+    # contributing the bulk of the score on clean marketing mail. The real
+    # phishing signal is a *displayed* link disagreeing with its target, which
+    # content_analyzer already reports separately.
+    INFORMATIONAL_ISSUES = frozenset({'domain_mismatch_with_sender'})
+
     SUSPICIOUS_TLDS = {
         'cn', 'ru', 'zip', 'top', 'biz', 'tk', 'ga', 'ml', 'cf', 'gq',
         'xyz', 'ng', 'work', 'asia', 'club', 'link', 'click', 'download',
@@ -37,6 +46,67 @@ class URLAnalyzerService:
         'bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'ow.ly', 'buff.ly',
         'bit.do', 'cutt.ly', 'is.gd', 'tiny.cc', 'rb.gy', 'shorturl.at',
     }
+
+    # Security gateways rewrite every link in a message so their own scanner
+    # sits in front of the click. The wrapper's hostname then belongs to the
+    # gateway -- often the *recipient's* own protection -- so analysing it
+    # reports the defence as the threat and never looks at the real target,
+    # which is sitting URL-encoded inside a query parameter.
+    _SAFELINK_HOSTS = ('safelinks.protection.outlook.com',)
+    _WRAPPERS = {
+        'safelinks.protection.outlook.com': ('Microsoft Safe Links', 'url'),
+        'linkprotect.cudasvc.com': ('Barracuda Link Protection', 'a'),
+        'www.google.com': ('Google redirect', 'q'),
+        'google.com': ('Google redirect', 'q'),
+    }
+
+    def unwrap_url(self, url: str, _depth: int = 0) -> tuple:
+        """Return (real_url, wrapper_name) after peeling any known gateway.
+
+        Depth-limited because a message can pass through more than one gateway
+        -- a Proofpoint-wrapped link forwarded into a Safe Links tenant -- and
+        because a hostile URL could otherwise nest wrappers to spin this.
+        """
+        if _depth >= 3 or not url:
+            return url, None
+        try:
+            parsed = urllib.parse.urlparse(url)
+        except ValueError:
+            return url, None
+        host = (parsed.hostname or '').lower()
+
+        target = None
+        name = None
+
+        if any(host.endswith(h) for h in self._SAFELINK_HOSTS):
+            name = 'Microsoft Safe Links'
+            target = urllib.parse.parse_qs(parsed.query).get('url', [None])[0]
+        elif host in self._WRAPPERS:
+            name, param = self._WRAPPERS[host]
+            target = urllib.parse.parse_qs(parsed.query).get(param, [None])[0]
+        elif host.endswith('urldefense.proofpoint.com'):
+            name = 'Proofpoint URL Defense'
+            raw = urllib.parse.parse_qs(parsed.query).get('u', [None])[0]
+            if raw:
+                # v2 substitutes '-' for '%' and '_' for '/' before quoting.
+                target = urllib.parse.unquote(raw.replace('-', '%').replace('_', '/'))
+        elif host.endswith('urldefense.com'):
+            name = 'Proofpoint URL Defense'
+            match = re.search(r'/v3/__(.+?)__;', url)
+            if match:
+                target = urllib.parse.unquote(match.group(1))
+        elif host.endswith('mimecast.com'):
+            # Mimecast encodes the target server-side; it cannot be recovered
+            # from the link alone. Name it so the analyst knows why the
+            # hostname is not the sender's, and stop.
+            return url, 'Mimecast (target not recoverable)'
+
+        if not target or not target.lower().startswith(('http://', 'https://')):
+            return url, name
+        if target == url:
+            return url, name
+        deeper, inner = self.unwrap_url(target, _depth + 1)
+        return deeper, inner or name
 
     def __init__(self, max_urls: int = 500, max_url_length: int = 4096):
         self.max_urls = max_urls
@@ -86,6 +156,14 @@ class URLAnalyzerService:
     def analyze_single_url(self, url: str, sender_domain: Optional[str] = None) -> Dict[str, Any]:
         """Analyze a single URL for suspicious characteristics."""
         issues = []
+        # Analyse where the link actually goes, not the gateway that rewrote
+        # it. Without this the report names the recipient's own protection as
+        # the suspicious host and never inspects the real target.
+        wrapped_original = url
+        url, wrapper = self.unwrap_url(url)
+        if wrapper:
+            issues.append('security_gateway_wrapped')
+
         original_length = len(url)
         if original_length > self.max_url_length:
             issues.append('url_too_long')
@@ -141,13 +219,19 @@ class URLAnalyzerService:
             if any(param in parsed.query.lower() for param in suspicious_params):
                 issues.append('suspicious_parameters')
 
+        scored = [i for i in issues if i not in self.INFORMATIONAL_ISSUES
+                  and i != 'security_gateway_wrapped']
         return {
             'url': url,
+            'wrapped_original': wrapped_original if wrapper else None,
+            'wrapper': wrapper,
             'original_length': original_length,
             'truncated': original_length > self.max_url_length,
             'domain': registered_domain or domain,
             'issues': issues,
-            'is_suspicious': len(issues) > 0,
+            'informational_issues': [i for i in issues
+                                     if i in self.INFORMATIONAL_ISSUES],
+            'is_suspicious': bool(scored),
         }
 
     def analyze_urls(self, urls: List[str], sender_domain: Optional[str] = None) -> Dict[str, Any]:
