@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - 'v*'
+  # Also build on PRs that can change the binary. The release job below is
+  # guarded on a v* ref, so a PR run builds and smoke-tests all three
+  # platforms and publishes nothing. Without this the Windows and macOS
+  # binaries would first be exercised by the release itself.
+  # Safe to path-filter: this is not a required status check, so an unreported
+  # run cannot block a PR the way a filtered required check would.
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/src/**'
+      - 'packaging/**'
+      - 'scripts/sync_webui.py'
+      - '.github/workflows/release-desktop.yml'
   workflow_dispatch:
 
 permissions:
@@ -50,24 +64,58 @@ jobs:
         env:
           ATARAM_NO_BROWSER: '1'
           ATARAM_PORT: '8321'
+          # Unbuffered, or the startup banner can sit in Python's block buffer
+          # (stdout is a file here, not a tty) and the URL below never appears.
+          PYTHONUNBUFFERED: '1'
         run: |
-          ./dist/AtaramEmailAnalyzer/AtaramEmailAnalyzer &
+          BIN=dist/AtaramEmailAnalyzer/AtaramEmailAnalyzer
+          [ "$RUNNER_OS" = "Windows" ] && BIN="$BIN.exe"
+
+          "./$BIN" > app.log 2>&1 &
           APP_PID=$!
-          for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:8321/health >/dev/null 2>&1 && break
+
+          # Do not assume ATARAM_PORT was honoured. When the preferred port
+          # cannot bind, the app deliberately falls back to a random one --
+          # likely on Windows, which reserves TCP ranges for Hyper-V/WSL. Read
+          # the URL the app actually printed instead.
+          URL=""
+          for _ in $(seq 1 30); do
+            URL=$(grep -oE 'http://127\.0\.0\.1:[0-9]+' app.log | head -1 || true)
+            if [ -n "$URL" ] && curl -sf "$URL/health" >/dev/null 2>&1; then
+              break
+            fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8321/health
-          curl -fsS http://127.0.0.1:8321/ | grep -q AtaramEmailAnalyzer || curl -fsS http://127.0.0.1:8321/ | grep -qi ataram
+
+          if [ -z "$URL" ]; then
+            echo "The application never reported a URL. Its output was:"
+            cat app.log
+            exit 1
+          fi
+          echo "Serving at $URL"
+
+          curl -fsS "$URL/health"
+          curl -fsS "$URL/" | grep -qi ataram
           curl -fsS -F emailfile=@samples/02-display-name-spoof.eml \
-            http://127.0.0.1:8321/api/v1/analyze | grep -q risk_assessment
-          kill $APP_PID
+            "$URL/api/v1/analyze" | grep -q risk_assessment
+
+          # Teardown must never fail the step: this runs under `bash -e`, and
+          # Git Bash cannot reliably signal a native Windows process.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            taskkill //IM AtaramEmailAnalyzer.exe //F >/dev/null 2>&1 || true
+          else
+            kill "$APP_PID" 2>/dev/null || true
+          fi
 
       - name: Package archive
         shell: bash
         run: |
           cd dist
-          ARCHIVE="AtaramEmailAnalyzer-${GITHUB_REF_NAME:-dev}-${{ matrix.label }}.zip"
+          # GITHUB_REF_NAME is "26/merge" on pull_request events, and a slash in
+          # the name makes zip treat it as a directory path. Tag refs never
+          # contain one, so release assets keep their exact v0.1.0-rc1 naming.
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          ARCHIVE="AtaramEmailAnalyzer-${VERSION//\//-}-${{ matrix.label }}.zip"
           if [ "$RUNNER_OS" = "Windows" ]; then
             7z a -tzip "$ARCHIVE" AtaramEmailAnalyzer >/dev/null
           else
@@ -111,6 +159,7 @@ jobs:
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           prerelease: ${{ contains(github.ref_name, '-rc') }}
+          generate_release_notes: true
           files: |
             artifacts/*.zip
             artifacts/SHA256SUMS.txt

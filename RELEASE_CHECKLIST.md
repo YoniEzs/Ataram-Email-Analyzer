@@ -37,7 +37,7 @@ cd backend
 python -m pip install -r requirements-dev.txt
 ruff check --no-cache app tests
 mypy
-pytest -q --cov=app --cov-report=term --cov-fail-under=65
+pytest -q --cov=app --cov-report=term --cov-fail-under=80
 pip-audit -r requirements-prod.txt
 
 cd ../frontend

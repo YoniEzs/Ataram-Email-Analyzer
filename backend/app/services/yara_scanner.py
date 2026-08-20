@@ -9,7 +9,7 @@ with the heuristic checks only.
 
 import logging
 import os
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,11 @@ except ImportError:
 
 _RULE_EXTENSIONS = ('.yar', '.yara')
 _SCAN_TIMEOUT_SECONDS = 10
+
+# Mirrors the severity ladder in email_analyzer._calculate_risk_score.
+_VALID_SEVERITIES = frozenset({'low', 'medium', 'high', 'critical'})
+# A rule that declares nothing gets a middling weight, never the top one.
+_DEFAULT_SEVERITY = 'medium'
 
 
 class YaraScanner:
@@ -58,7 +63,24 @@ class YaraScanner:
         ]
 
     def scan(self, data: bytes) -> List[str]:
-        """Scan bytes, returning matching rule names (empty when unavailable)."""
+        """Scan bytes, returning matching rule names (empty when unavailable).
+
+        Kept returning plain names because the names are what reaches the API
+        response and the UI. Callers that need to weigh a match use
+        ``scan_detailed``.
+        """
+        return [match['rule'] for match in self.scan_detailed(data)]
+
+    def scan_detailed(self, data: bytes) -> List[Dict[str, Any]]:
+        """Scan bytes, returning each match as ``{'rule', 'severity', 'meta'}``.
+
+        A rule may declare its own weight in ``meta.severity``; the starter
+        rules already do. Without this, every match looks identical to the
+        caller and a rule pack has no way to say "this is worth noting" rather
+        than "this is malware". Unrecognised or absent values fall back to
+        ``_DEFAULT_SEVERITY`` rather than to the most severe reading — a rule
+        that forgot to declare should not be able to force a critical verdict.
+        """
         if not self.available or not data or self.rules is None:
             return []
         try:
@@ -66,10 +88,26 @@ class YaraScanner:
                 data=data[:self.max_scan_bytes],
                 timeout=_SCAN_TIMEOUT_SECONDS,
             )
-            return [m.rule for m in matches]
         except Exception as e:
             logger.warning(f"[YaraScanner] Scan failed: {e}")
             return []
+
+        detailed: List[Dict[str, Any]] = []
+        for match in matches:
+            meta = dict(getattr(match, 'meta', {}) or {})
+            declared = str(meta.get('severity', '')).strip().lower()
+            if declared not in _VALID_SEVERITIES:
+                if declared:
+                    logger.warning(
+                        "[YaraScanner] Rule %s declares unknown severity %r; "
+                        "treating as %s",
+                        match.rule, meta.get('severity'), _DEFAULT_SEVERITY,
+                    )
+                declared = _DEFAULT_SEVERITY
+            detailed.append(
+                {'rule': match.rule, 'severity': declared, 'meta': meta}
+            )
+        return detailed
 
 
 # Rules are compiled once per path and reused across requests

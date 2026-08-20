@@ -20,8 +20,12 @@ and malicious-email indicators.
 - Inspects attachment names, magic bytes, hashes and ZIP metadata without
   extracting archives.
 - Runs bounded YARA scans against message and attachment bytes.
-- Optionally checks sender IPs with AbuseIPDB and attachment hashes with
-  VirusTotal.
+- Checks URLs and attachments with open-source tooling only, and never runs
+  them: a URL is parsed, never requested, and an attachment is hashed and
+  inspected, never executed or extracted to disk. Analysing a phishing message
+  therefore cannot reach attacker infrastructure or disclose your IP to it.
+- Optionally checks sender IPs with AbuseIPDB, and attachment hashes with
+  VirusTotal when you explicitly enable it (off by default).
 - Looks up SPF, DKIM and DMARC DNS records and domain-registration data via RDAP.
 - Independently verifies DKIM when raw MIME bytes are available.
 - Provides an English/Hebrew interface, JSON export, printable reports and a
@@ -93,29 +97,69 @@ can be fabricated.
 
 ## Run it in 2 minutes
 
-Pick whichever fits your machine — every option runs entirely locally:
+Every option runs entirely locally.
+
+### From a source checkout (works today)
+
+The fastest way to get the full tool — UI and API in one local process, bound
+to `127.0.0.1`:
+
+```bash
+git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
+cd Ataram-Email-Analyzer/backend
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+python -m pip install -r requirements-prod.txt waitress
+python -m app.desktop
+```
+
+A browser tab opens at `http://127.0.0.1:8321`. Set `ATARAM_NO_BROWSER=1` to
+suppress that, or `ATARAM_PORT` to pick a port.
+
+A virtual environment is required, not just recommended: one of the pinned
+dependencies (`pyspf`) fails to build against the patched setuptools shipped by
+some system Pythons.
+
+Or with Docker, if you would rather not install Python:
+
+```bash
+cp .env.example .env
+docker compose up --build      # then open http://localhost:3000
+```
+
+Either way, try the synthetic messages in [`samples/`](samples/) — each
+documents the exact verdict it should produce, and those verdicts are enforced
+by `backend/tests/test_samples_regression.py`.
+
+### From a published release
 
 **Desktop app (Windows / macOS / Linux)** — download the zip for your OS from
-the [latest release](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases/latest),
+the [releases page](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases),
 extract, run `AtaramEmailAnalyzer`. Your browser opens by itself. Binaries are
 unsigned; verify downloads against the release's `SHA256SUMS.txt`.
 
-**pipx** (Python 3.11+):
-
-```bash
-pipx install ataram-email-analyzer
-ataram-analyzer
-```
+Note the releases *list*, not `/releases/latest` — the latter excludes
+prereleases, so it resolves to nothing while only a release candidate exists.
 
 **Docker, from published images** — no build step:
 
 ```bash
 curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
-docker compose -f docker-compose.release.yml up
+ATARAM_VERSION=0.1.0-rc1 docker compose -f docker-compose.release.yml up
 ```
 
-Then try the synthetic messages in [`samples/`](samples/) — each documents the
-verdict it should produce.
+`ATARAM_VERSION` is required while only a release candidate exists — the
+`:latest` image tag is published for stable releases only.
+
+**pipx** (Python 3.11+) — *not published yet, planned for stable v0.1.0*:
+
+```bash
+# This will not work until the package is uploaded to PyPI.
+pipx install ataram-email-analyzer
+```
+
+Nothing publishes `ataram-email-analyzer` to PyPI yet, so use a source
+checkout, the desktop download or Docker until then.
 
 The desktop and pipx builds bind to `127.0.0.1` only and serve the UI and API
 from one process; the Docker stack is the hardened multi-container deployment
@@ -156,7 +200,7 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
 python -m pip install -r requirements-dev.txt
-pytest -q --cov=app --cov-fail-under=65
+pytest -q --cov=app --cov-fail-under=80
 ruff check app tests
 mypy
 ```
@@ -259,6 +303,8 @@ See [CLOUDFLARE_RENDER_DEPLOYMENT.md](CLOUDFLARE_RENDER_DEPLOYMENT.md).
 
 ## Security and releases
 
+- Manual test script: [docs/QA-GUIDE.md](docs/QA-GUIDE.md)
+- SOC evaluation walkthrough: [docs/SOC-EVALUATION.md](docs/SOC-EVALUATION.md)
 - Vulnerabilities: [SECURITY.md](SECURITY.md)
 - Contribution process: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Release gates: [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)

@@ -191,6 +191,12 @@ const I18N_TRANSLATIONS = {
 
         // Pivot actions
         'Copy': 'העתקה',
+        'Copy all URLs': 'העתקת כל הקישורים',
+        'Copy all hashes': 'העתקת כל ההאשים',
+        'Shown defanged so nobody clicks one by accident. Copy gives the real URL.':
+            'הקישורים מוצגים מנוטרלים כדי שאיש לא ילחץ בטעות. כפתור ההעתקה מעתיק את הכתובת האמיתית.',
+        'URLs above are defanged - restore hxxp to http before use.':
+            'הקישורים שלמעלה מנוטרלים - יש להחזיר hxxp ל-http לפני שימוש.',
         'Copied': 'הועתק',
         'Look up': 'בדיקה',
         'Search': 'חיפוש',

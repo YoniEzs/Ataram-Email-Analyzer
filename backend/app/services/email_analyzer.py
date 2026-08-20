@@ -123,6 +123,19 @@ ARTIFACT_SUSPICION_MESSAGES: Dict[str, Tuple[str, str]] = {
 }
 
 
+# Severity ladder shared by the attachment analyzer, the YARA mapping and
+# _calculate_risk_score's severity_points. Ordered low to critical.
+_SEVERITY_ORDER = ('low', 'medium', 'high', 'critical')
+
+
+def _max_severity(*severities: str) -> str:
+    """Return the highest severity given, ignoring unrecognised values."""
+    ranked = [s for s in severities if s in _SEVERITY_ORDER]
+    if not ranked:
+        return 'low'
+    return max(ranked, key=_SEVERITY_ORDER.index)
+
+
 class EmailAnalyzerService:
     """Coordinates all email analysis modules"""
 
@@ -428,12 +441,21 @@ class EmailAnalyzerService:
             data = original.get('data') or b''
             if not data:
                 continue
-            matches = self.yara_scanner.scan(data)
+            matches = self.yara_scanner.scan_detailed(data)
             if matches:
-                result['yara_matches'] = matches
+                result['yara_matches'] = [m['rule'] for m in matches]
                 result['issues'].append('yara_match')
                 result['is_suspicious'] = True
-                result['severity'] = 'critical'
+                # Take the highest severity the matching rules declare, rather
+                # than forcing critical for any match at all. Critical is worth
+                # 25 points and can escalate the whole verdict, so handing that
+                # authority to every rule in YARA_RULES_PATH means one noisy
+                # third-party rule turns a legitimate attachment critical.
+                # Never lower a severity another check already established.
+                result['severity'] = _max_severity(
+                    result.get('severity', 'low'),
+                    *(m['severity'] for m in matches),
+                )
         attachment_analysis['suspicious_count'] = sum(
             1 for a in analyzed if a.get('is_suspicious')
         )
@@ -681,12 +703,43 @@ class EmailAnalyzerService:
                 status['spf_advisory'] = 'ok'
                 advisory['spf'] = spf
 
-            artifacts['checklist'] = ArtifactExtractorService._build_checklist(artifacts)
-            artifacts['flags'] = collect_flags(artifacts)
         except Exception as exc:
+            # A partial merge must not masquerade as a complete one. Record it
+            # against every source that never reached a terminal status, so the
+            # report says the enrichment broke instead of showing a confident
+            # verdict built on half-merged data.
             logger.warning(
                 '[EmailAnalyzerService] artifact enrichment merge failed: %s', exc
             )
+            status = artifacts.setdefault('enrichment_status', {})
+            for source in (
+                'reverse_dns', 'ip_intel', 'mx', 'spf_advisory',
+            ):
+                status.setdefault(source, 'error')
+            status['merge'] = 'error'
+        finally:
+            # Always rebuilt, never skipped. These are derived views over
+            # `artifacts`; leaving the pre-enrichment copies in place after a
+            # failure would contradict the block they claim to summarise.
+            # Guarded in turn, because a rebuild that raised out of `finally`
+            # would take down the whole analysis — a worse failure than the
+            # stale views this replaces.
+            try:
+                artifacts['checklist'] = ArtifactExtractorService._build_checklist(
+                    artifacts
+                )
+            except Exception as exc:
+                logger.warning(
+                    '[EmailAnalyzerService] checklist rebuild failed: %s', exc
+                )
+                artifacts.setdefault('enrichment_status', {})['merge'] = 'error'
+            try:
+                artifacts['flags'] = collect_flags(artifacts)
+            except Exception as exc:
+                logger.warning(
+                    '[EmailAnalyzerService] flag rebuild failed: %s', exc
+                )
+                artifacts.setdefault('enrichment_status', {})['merge'] = 'error'
 
     def _analyze_authentication(self, auth_results: str) -> Dict[str, Any]:
         """Parse untrusted Authentication-Results claims for display only."""

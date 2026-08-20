@@ -114,3 +114,39 @@ def test_env_example_documents_forwarded_flags():
         f".env.example does not document {sorted(missing)} — add each with "
         "its default so operators can discover the toggle."
     )
+
+
+def _render_yaml_env_keys():
+    """Env var names declared under the backend service's ``envVars:`` block.
+
+    Same textual approach as the compose parser above, matched to
+    ``render.yaml``'s list-of-mappings form (``- key: NAME``).
+    """
+    path = os.path.join(_REPO_ROOT, 'render.yaml')
+    with open(path, encoding='utf-8') as fh:
+        return set(re.findall(r'^\s*-\s*key:\s*([A-Za-z_][A-Za-z0-9_]*)', fh.read(),
+                              re.MULTILINE))
+
+
+def test_every_enable_flag_is_declared_in_render_yaml():
+    """Render deployments must be able to reach the no-disclosure mode too.
+
+    ENABLE_REVERSE_DNS, ENABLE_IP_RDAP and ENABLE_ASN_LOOKUP default to true
+    in config.py. A Render service that never declares them cannot be switched
+    off, so the sending IP is disclosed to Team Cymru and rdap.org with no
+    operator control — the exact scenario PRIVACY.md tells operators they can
+    avoid.
+    """
+    missing = _enable_flags_read_by_code() - _render_yaml_env_keys()
+    assert not missing, (
+        f"render.yaml does not declare {sorted(missing)}, so a Render "
+        "deployment cannot turn those lookups off. Add them under "
+        "services[].envVars."
+    )
+
+
+def test_enrichment_timeouts_are_declared_in_render_yaml():
+    missing = _EXTRA_FORWARDED - _render_yaml_env_keys()
+    assert not missing, (
+        f"render.yaml does not declare {sorted(missing)}."
+    )
