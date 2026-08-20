@@ -8,10 +8,12 @@ items below for the exact candidate commit.
 - [x] Project-authored code has an MIT license.
 - [x] Runtime dependencies are indexed in `THIRD_PARTY_NOTICES.md`.
 - [x] GPL `extract-msg` dependency replaced with MIT `python-oxmsg`.
-- [ ] Dependency-license report reviewed for all transitive packages.
+- [x] Dependency-license report reviewed for all transitive packages
+  (pip-licenses 5.5.5; pyspf is PSF-licensed, all others as indexed).
 - [ ] Branding, domain and maintainer contact details approved.
-- [ ] Real email samples and personal/internal documents absent from every Git
-  ref and workflow artifact.
+- [x] Real email samples and personal/internal documents absent from every Git
+  ref and workflow artifact (all history objects scanned; `samples/` contains
+  only synthetic messages written for this repository).
 
 ## 2. Security and privacy
 
@@ -20,7 +22,9 @@ items below for the exact candidate commit.
 - [x] Header authentication claims cannot affect scoring.
 - [x] Hostile-input resource limits have regression tests.
 - [x] Containers run the backend as non-root and omit tests/env files.
-- [ ] Gitleaks full-history workflow passes.
+- [x] Gitleaks full-history workflow passes (gitleaks 8.24.3 run locally over
+  the complete history: no leaks found; re-run in CI after the visibility
+  change as §6 requires).
 - [ ] CodeQL and dependency review pass after the repository is public (or with
   private-repository code scanning enabled).
 - [ ] Hosting proxy/body buffering and log retention are documented by the
@@ -33,7 +37,7 @@ cd backend
 python -m pip install -r requirements-dev.txt
 ruff check --no-cache app tests
 mypy
-pytest -q --cov=app --cov-report=term --cov-fail-under=65
+pytest -q --cov=app --cov-report=term --cov-fail-under=80
 pip-audit -r requirements-prod.txt
 
 cd ../frontend
@@ -48,7 +52,7 @@ docker compose up --build -d
 curl -fsS http://localhost:3000/health
 ```
 
-- [ ] Commands pass from a clean clone on Linux.
+- [x] Commands pass from a clean clone on Linux (verified 2026-08-18).
 - [ ] Docker flow passes on Windows Docker Desktop.
 - [ ] Backend/frontend images pass Trivy HIGH/CRITICAL-fixable scans.
 - [ ] SBOMs are generated and attached to the candidate release.

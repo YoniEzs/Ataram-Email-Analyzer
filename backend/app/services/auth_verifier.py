@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
-import tldextract
+from app.utils.domains import organizational_domain as _organizational_domain
 
 logger = logging.getLogger(__name__)
 
@@ -20,17 +20,6 @@ try:
     DKIM_AVAILABLE = True
 except ImportError:
     DKIM_AVAILABLE = False
-
-
-_tld_extract = tldextract.TLDExtract(suffix_list_urls=())
-
-
-def _organizational_domain(domain: Optional[str]) -> Optional[str]:
-    if not domain:
-        return None
-    clean = domain.strip().lower().rstrip('.')
-    extracted = _tld_extract(clean)
-    return extracted.top_domain_under_public_suffix or clean
 
 
 class AuthVerifierService:

@@ -1,0 +1,15 @@
+Received: from mail.bulkhost.example.net (unknown [8.8.4.4])
+	by mx.yourcompany.example with ESMTP id SP002
+	for <finance@yourcompany.example>; Tue, 11 Aug 2026 07:02:11 +0000
+From: "IT Helpdesk support@yourcompany.example" <account-verify@bulkhost.example.net>
+To: finance@yourcompany.example
+Subject: Re: Password expires today - verify now
+Reply-To: helpdesk.tickets@gmail.com
+Return-Path: <bounce@bulkhost.example.net>
+Date: Tue, 11 Aug 2026 07:02:00 +0000
+Message-ID: <sp-77@bulkhost.example.net>
+
+Your password expires in 2 hours. Verify your account immediately to avoid
+losing access: http://bulkhost.example.net/verify
+
+IT Helpdesk

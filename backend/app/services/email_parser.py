@@ -11,7 +11,8 @@ from datetime import datetime
 from email import policy
 from email.header import decode_header, make_header
 from email.parser import BytesParser
-from typing import Dict, Any, List
+from email.utils import getaddresses
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,47 @@ def html_to_text(html: str) -> str:
             logger.debug(f"[email_parser] HTML-to-text failed: {e}")
     # Crude fallback: strip tags
     return re.sub(r'<[^>]+>', ' ', html)
+
+
+# Upper bound on parsed address entries per header, so a hostile To: line
+# cannot amplify memory before the analyzer's own limits apply.
+MAX_ADDRESSES = 200
+# Upper bound on any single decoded header value reflected into the
+# response. Real MTAs keep headers near 8 KB; a hostile file can carry a
+# far larger one (a 100 KB subject bloats the JSON to ~500 KB). Bounding
+# here caps every reflected header at once without touching body limits.
+MAX_HEADER_CHARS = 16_384
+
+# Headers a receiving MTA writes with the envelope recipient. An address here
+# that appears in neither To: nor Cc: is how a Bcc delivery looks from outside.
+ENVELOPE_TO_HEADERS = (
+    ('Delivered-To', 'delivered_to'),
+    ('X-Original-To', 'x_original_to'),
+    ('X-Envelope-To', 'x_envelope_to'),
+)
+
+_HEADER_BLOCK_LIMIT = 128 * 1024
+_UNFOLD_RE = re.compile(rb'\r?\n[ \t]+')
+
+
+def raw_header_value(data: Optional[bytes], name: str) -> str:
+    """Read a header straight from the raw bytes, before RFC2047 decoding.
+
+    ``policy.default`` decodes encoded words on access, which destroys the
+    charset information that makes a spoofed subject visible. The raw block is
+    the only place that survives.
+    """
+    if not data:
+        return ""
+    try:
+        block = data[:_HEADER_BLOCK_LIMIT].split(b'\r\n\r\n', 1)[0].split(b'\n\n', 1)[0]
+        unfolded = _UNFOLD_RE.sub(b' ', block)
+        match = re.search(
+            rb'(?im)^' + re.escape(name.encode()) + rb'\s*:\s*([^\r\n]*)', unfolded
+        )
+        return match.group(1).decode('utf-8', 'replace').strip() if match else ""
+    except Exception:
+        return ""
 
 
 class EmailParserService:
@@ -65,13 +107,21 @@ class EmailParserService:
 
     @staticmethod
     def decode_header(val: str) -> str:
-        """Decode email header value"""
+        """Decode an email header value, bounded to MAX_HEADER_CHARS.
+
+        Every reflected header string flows through here, so the length cap
+        applied at this one point protects the subject, recipients, routing
+        strings and the rest from a header-bomb file inflating the response.
+        """
         if not val:
             return ""
         try:
-            return str(make_header(decode_header(val)))
+            decoded = str(make_header(decode_header(val)))
         except Exception:
-            return val
+            decoded = val
+        if len(decoded) > MAX_HEADER_CHARS:
+            return decoded[:MAX_HEADER_CHARS] + "\u2026[truncated]"
+        return decoded
 
     @staticmethod
     def is_probably_msg(file_bytes: bytes, filename: str) -> bool:
@@ -140,6 +190,29 @@ class EmailParserService:
         # can be forged. The analyzer therefore exposes these as claims only.
         auth_headers = [self.decode_header(x) for x in (msg.get_all("Authentication-Results", []) or [])]
 
+        def addr_list(name: str) -> List[Dict[str, str]]:
+            """Structured addresses for one header.
+
+            getaddresses runs on the *raw* values: decoding first can turn an
+            encoded comma inside a display name into an address separator and
+            split one recipient into two.
+            """
+            raw_values = [str(v) for v in (msg.get_all(name, []) or [])]
+            entries: List[Dict[str, str]] = []
+            for display, addr in getaddresses(raw_values)[:MAX_ADDRESSES]:
+                display = self.decode_header(display).strip()
+                addr = (addr or "").strip()
+                if display or addr:
+                    entries.append({"name": display, "address": addr.lower()})
+            return entries
+
+        def raw_list(name: str) -> List[str]:
+            return [
+                self.decode_header(str(v)).strip()
+                for v in (msg.get_all(name, []) or [])[:MAX_ADDRESSES]
+                if str(v).strip()
+            ]
+
         headers = {
             "sender": h("From"),
             "recipients": ", ".join([x for x in [h("To"), h("Cc")] if x]),
@@ -152,7 +225,23 @@ class EmailParserService:
             "dkim_signature": h("DKIM-Signature"),
             "return_path": h("Return-Path"),
             "message_id": h("Message-ID"),
+            # Structured recipients and thread context for artifact extraction.
+            "from_addresses": addr_list("From"),
+            "to": addr_list("To"),
+            "cc": addr_list("Cc"),
+            "bcc": addr_list("Bcc"),
+            "reply_to_addresses": addr_list("Reply-To"),
+            "to_raw": h("To"),
+            "cc_raw": h("Cc"),
+            "in_reply_to": h("In-Reply-To"),
+            "references": h("References"),
+            "subject_raw": raw_header_value(data, "Subject") or h("Subject"),
+            "received_spf": h("Received-SPF"),
+            "x_originating_ip": h("X-Originating-IP"),
+            "x_mailer": h("X-Mailer"),
         }
+        for header_name, key in ENVELOPE_TO_HEADERS:
+            headers[key] = raw_list(header_name)
 
         # Extract body parts
         body_parts = self._get_body_parts(msg)
@@ -190,6 +279,24 @@ class EmailParserService:
         def pick(name: str, fallback: str = "") -> str:
             return normalized_headers.get(name.lower()) or fallback
 
+        # python-oxmsg exposes no recipient_type attribute; the To/Cc/Bcc split
+        # lives in the MAPI property. Defined locally rather than imported from
+        # oxmsg.domain.constants, which is an internal module path.
+        _PID_RECIPIENT_TYPE = 0x0C15  # PidTagRecipientType: 1=To 2=Cc 3=Bcc
+        msg_recipients: Dict[int, List[Dict[str, str]]] = {1: [], 2: [], 3: []}
+        for recipient in (m.recipients or ())[:MAX_ADDRESSES]:
+            address = (getattr(recipient, 'email_address', '') or '').strip()
+            name = (getattr(recipient, 'name', '') or '').strip()
+            if not address and not name:
+                continue
+            try:
+                rtype = recipient.properties.int_prop_value(_PID_RECIPIENT_TYPE)
+            except Exception:
+                rtype = None
+            msg_recipients.setdefault(rtype if rtype in (1, 2, 3) else 1, []).append(
+                {'name': name, 'address': address.lower()}
+            )
+
         recipients = ", ".join(
             recipient.email_address or recipient.name
             for recipient in (m.recipients or ())
@@ -203,6 +310,28 @@ class EmailParserService:
         )
         auth_claim = pick("Authentication-Results", "")
 
+        def addr_list_msg(name: str, fallback: List[Dict[str, str]]) -> List[Dict[str, str]]:
+            """Prefer the transport headers; fall back to the MAPI table.
+
+            A .msg often carries no transport headers at all (a draft, or an
+            item that never left the client), in which case the recipient table
+            is the only source — and unlike an EML it records real Bcc entries.
+            """
+            raw = normalized_headers.get(name.lower(), '')
+            if raw:
+                return [
+                    {'name': display.strip(), 'address': (addr or '').strip().lower()}
+                    for display, addr in getaddresses([raw])[:MAX_ADDRESSES]
+                    if display.strip() or (addr or '').strip()
+                ]
+            return fallback
+
+        recipients_source = (
+            'transport_headers'
+            if normalized_headers.get('to') or normalized_headers.get('cc')
+            else 'msg_recipient_table'
+        )
+
         headers = {
             "sender": pick("From", m.sender or ""),
             "recipients": pick("To", recipients),
@@ -215,7 +344,28 @@ class EmailParserService:
             "dkim_signature": pick("DKIM-Signature", ""),
             "return_path": pick("Return-Path", ""),
             "message_id": pick("Message-ID", ""),
+            "from_addresses": addr_list_msg(
+                "From",
+                [{'name': '', 'address': (m.sender or '').strip().lower()}]
+                if (m.sender or '').strip() else [],
+            ),
+            "to": addr_list_msg("To", msg_recipients[1]),
+            "cc": addr_list_msg("Cc", msg_recipients[2]),
+            "bcc": addr_list_msg("Bcc", msg_recipients[3]),
+            "reply_to_addresses": addr_list_msg("Reply-To", []),
+            "to_raw": pick("To", recipients),
+            "cc_raw": pick("Cc", ""),
+            "in_reply_to": pick("In-Reply-To", ""),
+            "references": pick("References", ""),
+            "subject_raw": pick("Subject", m.subject or ""),
+            "received_spf": pick("Received-SPF", ""),
+            "x_originating_ip": pick("X-Originating-IP", ""),
+            "x_mailer": pick("X-Mailer", ""),
+            "recipients_source": recipients_source,
         }
+        for header_name, key in ENVELOPE_TO_HEADERS:
+            value = pick(header_name, "")
+            headers[key] = [value] if value else []
 
         body_html = str(m.html_body or "")[:self.max_text_chars]
         body_text = str(m.body or "")[:self.max_text_chars]

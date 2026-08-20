@@ -33,7 +33,7 @@ jobs:
           python -m pip install -r requirements-dev.txt
           ruff check --no-cache app tests
           mypy
-          pytest -q --cov=app --cov-report=term --cov-fail-under=65
+          pytest -q --cov=app --cov-report=term --cov-fail-under=80
           pip-audit -r requirements-prod.txt
 
       - name: Set up Node.js
@@ -126,7 +126,15 @@ jobs:
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Sign image digest
-        run: cosign sign --yes "${REGISTRY}/${IMAGE_NAME_BACKEND}@${{ steps.push.outputs.digest }}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          # OCI repository names must be lowercase, but github.repository
+          # preserves the owner/repo casing this repo happens to use.
+          # metadata-action lowercases the push tags for us; this run step
+          # has to do it itself or cosign rejects the reference.
+          IMAGE="${REGISTRY}/${IMAGE_NAME_BACKEND}"
+          cosign sign --yes "${IMAGE,,}@${DIGEST}"
 
   frontend:
     name: Frontend image
@@ -205,4 +213,12 @@ jobs:
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
 
       - name: Sign image digest
-        run: cosign sign --yes "${REGISTRY}/${IMAGE_NAME_FRONTEND}@${{ steps.push.outputs.digest }}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          # OCI repository names must be lowercase, but github.repository
+          # preserves the owner/repo casing this repo happens to use.
+          # metadata-action lowercases the push tags for us; this run step
+          # has to do it itself or cosign rejects the reference.
+          IMAGE="${REGISTRY}/${IMAGE_NAME_FRONTEND}"
+          cosign sign --yes "${IMAGE,,}@${DIGEST}"

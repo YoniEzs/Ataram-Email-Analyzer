@@ -1,0 +1,11 @@
+Received: from relay.partner.example.org (relay.partner.example.org [9.9.9.9])
+	by mx.yourcompany.example with ESMTPS id BC004
+	for <hidden-target@yourcompany.example>; Thu, 13 Aug 2026 11:30:42 +0000
+Delivered-To: hidden-target@yourcompany.example
+From: Vendor Billing <billing@partner.example.org>
+To: accounts@yourcompany.example
+Subject: Fwd: Invoice 8841 second notice
+Date: Thu, 13 Aug 2026 14:30:00 +0300
+Message-ID: <bc-8841@partner.example.org>
+
+Second notice for invoice 8841. Please arrange payment this week.

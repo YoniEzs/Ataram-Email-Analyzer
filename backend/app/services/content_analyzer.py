@@ -176,7 +176,7 @@ class ContentAnalyzerService:
 
             # Count hidden elements
             for tag in soup.find_all(True):
-                style = (tag.get('style', '') or '').replace(' ', '').lower()
+                style = str(tag.get('style', '') or '').replace(' ', '').lower()
                 classes = [c.lower() for c in (tag.get('class') or [])]
 
                 if 'display:none' in style or 'visibility:hidden' in style or 'hidden' in classes:
@@ -194,7 +194,7 @@ class ContentAnalyzerService:
                     # Extract actual href domain
                     try:
                         import urllib.parse
-                        href_domain = urllib.parse.urlparse(href).hostname or ''
+                        href_domain = urllib.parse.urlparse(str(href)).hostname or ''
                     except Exception:
                         href_domain = ''
 

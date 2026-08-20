@@ -1,0 +1,11 @@
+Received: from smtp.exаmple-bank.com (unknown [1.1.1.1])
+	by mx.yourcompany.example with ESMTP id HG003
+	for <ceo@yourcompany.example>; Wed, 12 Aug 2026 15:44:09 +0000
+From: Security Team <alerts@exаmple-bank.com>
+To: ceo@yourcompany.example
+Subject: Unusual sign-in detected on your account
+Date: Wed, 12 Aug 2026 15:44:00 +0000
+Message-ID: <hg-19@exаmple-bank.com>
+
+We detected an unusual sign-in. Confirm your identity within 24 hours or
+your account will be suspended.
