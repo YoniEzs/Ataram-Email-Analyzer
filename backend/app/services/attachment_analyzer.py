@@ -10,17 +10,9 @@ import os
 import zipfile
 from typing import Any, Callable, Dict, List
 
+from app.utils.text_flags import BIDI_CONTROL_CHARS as _BIDI_CONTROL_CHARS
+
 logger = logging.getLogger(__name__)
-
-# Unicode bidirectional control characters. U+202E (right-to-left override)
-# makes "annexe_‮fdp.exe" display as "annexe_exe.pdf"; legitimate
-# filenames essentially never contain any of these.
-_BIDI_CONTROL_CHARS = frozenset(
-    '\u200e\u200f'                               # LRM, RLM
-    '\u202a\u202b\u202c\u202d\u202e'  # LRE, RLE, PDF, LRO, RLO
-    '\u2066\u2067\u2068\u2069'        # LRI, RLI, FSI, PDI
-)
-
 
 class AttachmentAnalyzerService:
     """Service for analyzing email attachments"""

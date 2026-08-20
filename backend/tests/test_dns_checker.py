@@ -1,0 +1,132 @@
+"""Tests for DNSCheckerService, focused on reverse DNS (PTR) lookups."""
+
+from unittest.mock import MagicMock, patch
+
+import dns.exception
+import pytest
+
+from app.services.dns_checker import DNSCheckerService
+from app.utils.cache import _cache
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    _cache.clear()
+    yield
+    _cache.clear()
+
+
+def _ptr_answer(*hostnames):
+    """Build a fake PTR answer set whose targets carry the trailing dot."""
+    answers = []
+    for hostname in hostnames:
+        rdata = MagicMock()
+        rdata.target = f"{hostname}."
+        answers.append(rdata)
+    return answers
+
+
+def test_reverse_dns_returns_first_hostname_without_trailing_dot():
+    service = DNSCheckerService(timeout=2)
+    with patch(
+        "app.services.dns_checker.dns.resolver.resolve",
+        return_value=_ptr_answer("dns.google", "google-public-dns-a.google.com"),
+    ) as mock_resolve:
+        assert service.reverse_dns("8.8.8.8") == "dns.google"
+    mock_resolve.assert_called_once()
+
+
+def test_reverse_dns_negative_result_is_cached():
+    service = DNSCheckerService(timeout=2)
+    with patch(
+        "app.services.dns_checker.dns.resolver.resolve",
+        side_effect=dns.exception.DNSException(),
+    ) as mock_resolve:
+        assert service.reverse_dns("8.8.8.8") is None
+        # Second lookup is served from the negative cache — no new query.
+        assert service.reverse_dns("8.8.8.8") is None
+    mock_resolve.assert_called_once()
+
+
+def test_reverse_dns_positive_result_is_cached():
+    service = DNSCheckerService(timeout=2)
+    # 1.1.1.1 rather than a 203.0.113.0/24 documentation address: RFC 5737
+    # ranges are not globally routable, so the public-IP guard now rejects
+    # them before any query is made.
+    with patch(
+        "app.services.dns_checker.dns.resolver.resolve",
+        return_value=_ptr_answer("mail.example.com"),
+    ) as mock_resolve:
+        assert service.reverse_dns("1.1.1.1") == "mail.example.com"
+        assert service.reverse_dns("1.1.1.1") == "mail.example.com"
+    mock_resolve.assert_called_once()
+
+
+@pytest.mark.parametrize("ip", ["192.168.1.1", "127.0.0.1", "10.0.0.5", "203.0.113.10"])
+def test_reverse_dns_never_queries_non_public_addresses(ip):
+    """An internal Received chain must not disclose private space to a resolver.
+
+    Documentation ranges are covered too: they are unroutable, so the query
+    would be pointless and would still leak the address.
+    """
+    service = DNSCheckerService(timeout=2)
+    with patch("app.services.dns_checker.dns.resolver.resolve") as mock_resolve:
+        assert service.reverse_dns(ip) is None
+    mock_resolve.assert_not_called()
+
+
+def test_reverse_dns_and_details_share_one_ptr_query():
+    """The cheap hostname lookup and FCrDNS must not each query PTR."""
+    service = DNSCheckerService(timeout=2)
+
+    def _resolve(name, rdtype, lifetime=None):
+        if rdtype == "PTR":
+            return _ptr_answer("dns.google")
+        raise dns.exception.DNSException()
+
+    with patch(
+        "app.services.dns_checker.dns.resolver.resolve", side_effect=_resolve
+    ) as mock_resolve:
+        service.reverse_dns("8.8.8.8")
+        ptr_queries_after_first = [
+            c for c in mock_resolve.call_args_list if c.args[1] == "PTR"
+        ]
+        service.reverse_dns_details("8.8.8.8")
+        ptr_queries_total = [
+            c for c in mock_resolve.call_args_list if c.args[1] == "PTR"
+        ]
+    assert len(ptr_queries_after_first) == 1
+    assert len(ptr_queries_total) == 1
+
+
+def test_reverse_dns_is_defined_exactly_once():
+    """Regression guard for a merge that silently shadowed this method.
+
+    Two same-named definitions merge without a git conflict; Python keeps the
+    last, so the wrong return type reaches callers with no warning.
+    """
+    import inspect
+
+    from app.services import dns_checker
+
+    source = inspect.getsource(dns_checker.DNSCheckerService)
+    assert source.count("    def reverse_dns(self") == 1
+    assert isinstance(
+        DNSCheckerService(timeout=2).reverse_dns("192.168.1.1"), type(None)
+    )
+
+
+def test_reverse_dns_empty_ip_returns_none_without_query():
+    service = DNSCheckerService(timeout=2)
+    with patch("app.services.dns_checker.dns.resolver.resolve") as mock_resolve:
+        assert service.reverse_dns("") is None
+    mock_resolve.assert_not_called()
+
+
+def test_reverse_dns_swallows_unexpected_errors():
+    service = DNSCheckerService(timeout=2)
+    with patch(
+        "app.services.dns_checker.dns.resolver.resolve",
+        side_effect=RuntimeError("boom"),
+    ):
+        assert service.reverse_dns("8.8.8.8") is None

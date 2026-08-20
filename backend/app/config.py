@@ -59,13 +59,22 @@ class Config:
     )
     MAX_ARCHIVE_RATIO = int(os.environ.get('MAX_ARCHIVE_RATIO', 100))
 
-    # YARA Rules — relative paths resolve against the backend root
+    # YARA Rules — relative paths resolve against the backend root. In a
+    # pip/pipx install there is no backend root above site-packages, so when
+    # the default location is absent (and no explicit path was given) fall
+    # back to the copy bundled inside the package by scripts/sync_webui.py.
+    # This must live here, not in an entry point: the class body evaluates on
+    # first import of the app package, before any main() can set env vars.
     _yara_path = os.environ.get('YARA_RULES_PATH', 'yara_rules')
     YARA_RULES_PATH = (
         _yara_path
         if os.path.isabs(_yara_path)
         else os.path.abspath(os.path.join(basedir, '..', _yara_path))
     )
+    if 'YARA_RULES_PATH' not in os.environ and not os.path.isdir(YARA_RULES_PATH):
+        _bundled_yara = os.path.join(basedir, 'bundled_yara')
+        if os.path.isdir(_bundled_yara):
+            YARA_RULES_PATH = _bundled_yara
 
     # Rate limiting
     RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'true').lower() == 'true'
@@ -93,6 +102,20 @@ class Config:
     ENABLE_AUTH_VERIFICATION = (
         os.environ.get('ENABLE_AUTH_VERIFICATION', 'true').lower() == 'true'
     )
+
+    # Artifact enrichment. Reverse DNS and IP intelligence are on by default:
+    # both are cheap, keyless, and describe the sending address rather than the
+    # message. See PRIVACY.md — they do disclose the sending IP to third parties.
+    ENABLE_REVERSE_DNS = os.environ.get('ENABLE_REVERSE_DNS', 'true').lower() == 'true'
+    ENABLE_IP_RDAP = os.environ.get('ENABLE_IP_RDAP', 'true').lower() == 'true'
+    ENABLE_ASN_LOOKUP = os.environ.get('ENABLE_ASN_LOOKUP', 'true').lower() == 'true'
+    ENABLE_MX_LOOKUP = os.environ.get('ENABLE_MX_LOOKUP', 'false').lower() == 'true'
+    # Advisory SPF re-evaluation. Off by default: both of its inputs come from
+    # forgeable headers, so the result is display-only and never scored.
+    ENABLE_SPF_ADVISORY = (
+        os.environ.get('ENABLE_SPF_ADVISORY', 'false').lower() == 'true'
+    )
+    SPF_TIMEOUT = int(os.environ.get('SPF_TIMEOUT', 8))
 
     # HTTPS is normally terminated by the application or an upstream proxy.
     # Plain-HTTP local Compose deployments explicitly disable this.

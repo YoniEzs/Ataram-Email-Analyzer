@@ -1,0 +1,22 @@
+{
+  "_comment": "Consumer webmail providers. Sending from one of these is normal for individuals but notable when a message claims to be corporate correspondence. Informational only - never scored.",
+  "domains": [
+    "gmail.com", "googlemail.com", "outlook.com", "outlook.co.uk", "hotmail.com",
+    "hotmail.co.uk", "hotmail.fr", "hotmail.it", "live.com", "live.co.uk",
+    "msn.com", "yahoo.com", "yahoo.co.uk", "yahoo.co.jp", "yahoo.fr",
+    "yahoo.de", "yahoo.in", "ymail.com", "rocketmail.com", "aol.com",
+    "aim.com", "icloud.com", "me.com", "mac.com", "protonmail.com",
+    "protonmail.ch", "proton.me", "pm.me", "tutanota.com", "tutanota.de",
+    "tuta.io", "gmx.com", "gmx.net", "gmx.de", "gmx.at",
+    "web.de", "mail.com", "email.com", "usa.com", "zoho.com",
+    "zohomail.com", "yandex.com", "yandex.ru", "ya.ru", "mail.ru",
+    "inbox.ru", "bk.ru", "list.ru", "rambler.ru", "qq.com",
+    "163.com", "126.com", "sina.com", "naver.com", "daum.net",
+    "hanmail.net", "seznam.cz", "wp.pl", "o2.pl", "interia.pl",
+    "libero.it", "virgilio.it", "tiscali.it", "orange.fr", "wanadoo.fr",
+    "free.fr", "laposte.net", "sfr.fr", "bluewin.ch", "t-online.de",
+    "freenet.de", "arcor.de", "walla.com", "walla.co.il", "nana10.co.il",
+    "bezeqint.net", "012.net.il", "hotmail.co.il", "fastmail.com", "hushmail.com",
+    "runbox.com", "posteo.de", "mailbox.org", "disroot.org", "riseup.net"
+  ]
+}

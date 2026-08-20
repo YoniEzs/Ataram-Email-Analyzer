@@ -34,7 +34,7 @@ def whois_with_age(days_old):
 )
 def test_domain_age_scoring_bands(age_days, expected_points):
     service = make_service()
-    score, _, _ = service._calculate_risk_score(
+    score, _, _, _ = service._calculate_risk_score(
         auth_analysis={"spf": "pass"},
         abuse_data=None,
         url_analysis={"suspicious_count": 0},
@@ -66,7 +66,7 @@ def test_compound_escalation_forces_critical_floor():
     service = make_service()
     suspicions = []
 
-    score, level, _ = service._calculate_risk_score(
+    score, level, _, _ = service._calculate_risk_score(
         auth_analysis={"spf": "fail"},
         abuse_data={"abuseConfidenceScore": 0},
         url_analysis={"suspicious_count": 0},
@@ -100,7 +100,7 @@ def test_whitelist_does_not_suppress_high_risk_signals():
         "whois_data": whois_with_age(4),
     }
 
-    whitelisted_score, _, whitelisted_applied = service._calculate_risk_score(
+    whitelisted_score, _, whitelisted_applied, _ = service._calculate_risk_score(
         auth_analysis={"spf": "pass"},
         sender_domain="trusted.com",
         verification={
@@ -110,7 +110,7 @@ def test_whitelist_does_not_suppress_high_risk_signals():
         },
         **common_kwargs,
     )
-    non_whitelisted_score, _, non_whitelisted_applied = service._calculate_risk_score(
+    non_whitelisted_score, _, non_whitelisted_applied, _ = service._calculate_risk_score(
         auth_analysis={"spf": "pass"},
         sender_domain="untrusted.com",
         **common_kwargs,
@@ -122,10 +122,35 @@ def test_whitelist_does_not_suppress_high_risk_signals():
     assert whitelisted_score >= 75
 
 
+def test_risk_factors_break_down_the_score():
+    service = make_service()
+    score, _, _, factors = service._calculate_risk_score(
+        auth_analysis={"spf": "fail"},
+        abuse_data={"abuseConfidenceScore": 80},
+        url_analysis={"suspicious_count": 2},
+        attachment_analysis={"suspicious_count": 0, "attachments": []},
+        content_analysis={"urgent_phrases": ["urgent", "act now"]},
+        suspicions=[],
+        whois_data=whois_with_age(500),
+        sender_domain="example.com",
+    )
+
+    labels = {f["label"] for f in factors}
+    assert "Sender IP reputation" in labels
+    assert "Suspicious URLs" in labels
+    assert "Urgent / pressure language" in labels
+    # Points recorded on the factors add up to the (uncapped) score.
+    assert sum(f["points"] for f in factors) == score
+    # Zero-point signals (no attachments here) are not listed.
+    assert "Suspicious attachments" not in labels
+    for factor in factors:
+        assert factor["severity"] in {"info", "low", "medium", "high", "critical"}
+
+
 def test_whitelist_gives_small_discount_to_low_risk_mail():
     service = make_service(whitelist_domains=['trusted.com'])
 
-    score, level, whitelist_applied = service._calculate_risk_score(
+    score, level, whitelist_applied, _ = service._calculate_risk_score(
         auth_analysis={'spf': 'pass'},
         abuse_data={'abuseConfidenceScore': 20},
         url_analysis={'suspicious_count': 0},

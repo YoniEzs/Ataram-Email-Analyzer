@@ -117,6 +117,127 @@ def test_bundled_starter_rules_compile():
 
 
 # ---------------------------------------------------------------------------
+# YARA severity mapping
+# ---------------------------------------------------------------------------
+
+def apply_yara_with_rule(rule_text, tmp_path, starting_severity='low'):
+    """Run _apply_yara over one attachment against a single ad-hoc rule."""
+    (tmp_path / 'rule.yar').write_text(rule_text)
+    service = EmailAnalyzerService(
+        enable_whois=False,
+        enable_abuseipdb=False,
+        enable_auth_verification=False,
+        yara_rules_path=str(tmp_path),
+    )
+    attachment_analysis = {
+        'suspicious_count': 0,
+        'attachments': [{
+            'filename': 'a.bin', 'issues': [], 'is_suspicious': False,
+            'severity': starting_severity,
+        }],
+    }
+    service._apply_yara(
+        combined_text='',
+        attachments=[{'data': b'... PHISH_MARKER ...'}],
+        content_analysis={},
+        attachment_analysis=attachment_analysis,
+    )
+    return attachment_analysis['attachments'][0]
+
+
+def test_yara_match_uses_the_severity_the_rule_declares(tmp_path):
+    """A match must not force critical regardless of what the rule says.
+
+    Critical is the heaviest attachment signal (25 points) and can escalate the
+    whole verdict. Granting that to every rule in YARA_RULES_PATH means one
+    noisy third-party rule turns a legitimate attachment critical, which for a
+    triage tool costs more trust than a miss.
+    """
+    result = apply_yara_with_rule(
+        'rule Marker { meta: severity = "medium" '
+        'strings: $a = "PHISH_MARKER" condition: $a }',
+        tmp_path,
+    )
+    assert result['severity'] == 'medium'
+    assert result['is_suspicious'] is True
+    assert result['yara_matches'] == ['Marker']
+
+
+def test_yara_rule_declaring_critical_still_reaches_critical(tmp_path):
+    result = apply_yara_with_rule(
+        'rule Marker { meta: severity = "critical" '
+        'strings: $a = "PHISH_MARKER" condition: $a }',
+        tmp_path,
+    )
+    assert result['severity'] == 'critical'
+
+
+def test_yara_rule_without_severity_defaults_to_medium(tmp_path):
+    """An imported rule that declares nothing must not inherit critical."""
+    result = apply_yara_with_rule(
+        'rule Marker { strings: $a = "PHISH_MARKER" condition: $a }',
+        tmp_path,
+    )
+    assert result['severity'] == 'medium'
+
+
+def test_yara_rule_with_unknown_severity_defaults_to_medium(tmp_path):
+    result = apply_yara_with_rule(
+        'rule Marker { meta: severity = "catastrophic" '
+        'strings: $a = "PHISH_MARKER" condition: $a }',
+        tmp_path,
+    )
+    assert result['severity'] == 'medium'
+
+
+def test_yara_never_lowers_an_existing_severity(tmp_path):
+    """A low-severity rule must not undo a critical set by another check.
+
+    attachment_analyzer already escalates hidden executables and double
+    extensions; a YARA match is additional evidence, never a discount.
+    """
+    result = apply_yara_with_rule(
+        'rule Marker { meta: severity = "low" '
+        'strings: $a = "PHISH_MARKER" condition: $a }',
+        tmp_path,
+        starting_severity='critical',
+    )
+    assert result['severity'] == 'critical'
+
+
+def test_highest_severity_wins_across_multiple_matches(tmp_path):
+    result = apply_yara_with_rule(
+        'rule LowOne { meta: severity = "low" '
+        'strings: $a = "PHISH_MARKER" condition: $a }\n'
+        'rule HighOne { meta: severity = "high" '
+        'strings: $a = "PHISH_MARKER" condition: $a }',
+        tmp_path,
+    )
+    assert result['severity'] == 'high'
+    assert sorted(result['yara_matches']) == ['HighOne', 'LowOne']
+
+
+def test_scan_detailed_exposes_rule_metadata(tmp_path):
+    (tmp_path / 'r.yar').write_text(
+        'rule Marker { meta: severity = "high" description = "d" '
+        'strings: $a = "PHISH_MARKER" condition: $a }'
+    )
+    matches = YaraScanner(str(tmp_path)).scan_detailed(b'PHISH_MARKER')
+    assert matches[0]['rule'] == 'Marker'
+    assert matches[0]['severity'] == 'high'
+    assert matches[0]['meta']['description'] == 'd'
+
+
+def test_scan_still_returns_plain_rule_names(tmp_path):
+    """The name list is the API and UI contract; it must not change shape."""
+    (tmp_path / 'r.yar').write_text(
+        'rule Marker { meta: severity = "high" '
+        'strings: $a = "PHISH_MARKER" condition: $a }'
+    )
+    assert YaraScanner(str(tmp_path)).scan(b'PHISH_MARKER') == ['Marker']
+
+
+# ---------------------------------------------------------------------------
 # VirusTotal service
 # ---------------------------------------------------------------------------
 
@@ -240,7 +361,7 @@ def test_vt_malicious_forces_critical_score():
             'virustotal': {'known': True, 'malicious': 12},
         }],
     }
-    score, level, _ = service._calculate_risk_score(
+    score, level, _, _ = service._calculate_risk_score(
         auth_analysis={'spf': 'pass'},
         abuse_data=None,
         url_analysis={'suspicious_count': 0},

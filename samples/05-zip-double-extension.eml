@@ -1,0 +1,26 @@
+Received: from mailer.invoices.example.net (unknown [8.8.8.8])
+	by mx.yourcompany.example with ESMTP id ZP005
+	for <accounts@yourcompany.example>; Fri, 14 Aug 2026 08:12:19 +0000
+From: Billing <billing@invoices.example.net>
+To: accounts@yourcompany.example
+Subject: Invoice 8841 attached
+Date: Fri, 14 Aug 2026 08:12:00 +0000
+Message-ID: <zp-8841@invoices.example.net>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="B8841"
+
+--B8841
+Content-Type: text/plain; charset=utf-8
+
+Invoice attached as requested.
+
+--B8841
+Content-Type: application/zip; name="invoice_8841.zip"
+Content-Disposition: attachment; filename="invoice_8841.zip"
+Content-Transfer-Encoding: base64
+
+UEsDBBQAAAAIAMe2El1kskr6RQAAAE0AAAAUAAAAaW52b2ljZV84ODQxLnBkZi5leGUNisEJwCAQ
+BP+pYhtIqkkDRjcoqAfeCik/B/MYmLlrcwQJNa3R6Q7xE97Wie0skKFw2HStJKLYfjrPeDi92Ywo
+ZoVdxw9QSwECFAMUAAAACADHthJdZLJK+kUAAABNAAAAFAAAAAAAAAAAAAAAgAEAAAAAaW52b2lj
+ZV84ODQxLnBkZi5leGVQSwUGAAAAAAEAAQBCAAAAdwAAAAAA
+--B8841--
