@@ -256,6 +256,9 @@ const I18N_TRANSLATIONS = {
         'not applicable - the signature did not validate':
             'לא רלוונטי - החתימה לא אומתה',
         'Save as PDF': 'שמירה כ-PDF',
+        'platform': 'תשתית פלטפורמה',
+        'Mail platform link - do not block': 'קישור של פלטפורמת הדואר - לא לחסום',
+        'Mail platform links - do not block': 'קישורי פלטפורמת הדואר - לא לחסום',
         'File': 'קובץ',
         'Report generated': 'הדוח הופק',
         'Ataram Email Analyzer': 'Ataram Email Analyzer',

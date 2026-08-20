@@ -52,6 +52,25 @@ class URLAnalyzerService:
     # gateway -- often the *recipient's* own protection -- so analysing it
     # reports the defence as the threat and never looks at the real target,
     # which is sitting URL-encoded inside a query parameter.
+    # Links the mail platform injects into a message, which the sender did
+    # not choose and cannot control: Outlook's own sender-identification
+    # footer, and the Safe Links wrapper the recipient's tenant applies. The
+    # line is *who put the link there*, not "is this domain reputable" -- so
+    # it stays a short, principled list rather than a reputation treadmill.
+    #
+    # They are excluded from the suspicious count and from bulk copy, because
+    # an analyst pasting exported links into a blocklist must never end up
+    # blocking aka.ms or their own tenant's Safe Links: that breaks Outlook
+    # for the whole organisation.
+    #
+    # An ESP such as SendGrid is deliberately NOT here. The sender chose it,
+    # it is their infrastructure, and it hosts phishing every day.
+    PLATFORM_INFRASTRUCTURE = (
+        'aka.ms',
+        'safelinks.protection.outlook.com',
+        'protection.outlook.com',
+    )
+
     _SAFELINK_HOSTS = ('safelinks.protection.outlook.com',)
 
     @staticmethod
@@ -75,6 +94,14 @@ class URLAnalyzerService:
         'www.google.com': ('Google redirect', 'q'),
         'google.com': ('Google redirect', 'q'),
     }
+
+    def _is_platform_infrastructure(self, url: str) -> bool:
+        """True when the mail platform, not the sender, put this link here."""
+        try:
+            host = (urllib.parse.urlparse(url).hostname or '').lower()
+        except ValueError:
+            return False
+        return any(self._host_is(host, d) for d in self.PLATFORM_INFRASTRUCTURE)
 
     def unwrap_url(self, url: str, _depth: int = 0) -> tuple:
         """Return (real_url, wrapper_name) after peeling any known gateway.
@@ -184,6 +211,11 @@ class URLAnalyzerService:
         # the suspicious host and never inspects the real target.
         wrapped_original = url
         url, wrapper = self.unwrap_url(url)
+        # Classify the destination, not the wrapper. A Safe Links URL is
+        # platform infrastructure, but what it points at belongs to the
+        # sender -- and that target is exactly what an analyst needs in a
+        # blocklist. Judging the wrapper would hide it.
+        is_platform = self._is_platform_infrastructure(url)
         if wrapper:
             issues.append('security_gateway_wrapped')
 
@@ -242,10 +274,14 @@ class URLAnalyzerService:
             if any(param in parsed.query.lower() for param in suspicious_params):
                 issues.append('suspicious_parameters')
 
+        if is_platform:
+            issues.append('platform_infrastructure')
         scored = [i for i in issues if i not in self.INFORMATIONAL_ISSUES
                   and i != 'security_gateway_wrapped']
         return {
             'url': url,
+            'is_platform_infrastructure': is_platform,
+            'safe_to_bulk_copy': not is_platform,
             'wrapped_original': wrapped_original if wrapper else None,
             'wrapper': wrapper,
             'original_length': original_length,
@@ -254,7 +290,7 @@ class URLAnalyzerService:
             'issues': issues,
             'informational_issues': [i for i in issues
                                      if i in self.INFORMATIONAL_ISSUES],
-            'is_suspicious': bool(scored),
+            'is_suspicious': bool(scored) and not is_platform,
         }
 
     def analyze_urls(self, urls: List[str], sender_domain: Optional[str] = None) -> Dict[str, Any]:

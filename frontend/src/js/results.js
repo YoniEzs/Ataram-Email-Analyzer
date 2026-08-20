@@ -468,13 +468,21 @@ class ResultsRenderer {
         const urlList = ((result.urls || {}).urls) || [];
         if (urlList.length) {
             lines.push('', `### ${t('URLs')}`);
-            urlList.forEach(url => {
+            urlList.filter(u => !u.is_platform_infrastructure).forEach(url => {
                 const issues = (url.issues || []).length
                     ? ` (${url.issues.join(', ')})`
                     : '';
                 lines.push(`- ${this.defang(url.url)}${issues}`);
             });
             lines.push(t('URLs above are defanged - restore hxxp to http before use.'));
+
+            // Listed apart so they are never pasted into a blocklist with the
+            // rest: these were added by the mail platform, not the sender.
+            const platform = urlList.filter(u => u.is_platform_infrastructure);
+            if (platform.length) {
+                lines.push('', `### ${t('Mail platform links - do not block')}`);
+                platform.forEach(url => lines.push(`- ${this.defang(url.url)}`));
+            }
         }
 
         // Spell the trust split out: this text gets pasted somewhere the badges
@@ -709,6 +717,10 @@ class ResultsRenderer {
             <div class="url-item ${url.is_suspicious ? 'suspicious' : ''}">
                 <div class="url-link">${this.escapeHtml(this.defang(url.url))}</div>
                 <div class="url-domain">${t('Domain')}: ${this.escapeHtml(this.defang(url.domain))}</div>
+                ${url.is_platform_infrastructure ? `
+                    <div class="url-issues">
+                        <span class="pill">${t('Mail platform link - do not block')}</span>
+                    </div>` : ''}
                 ${url.issues && url.issues.length > 0 ? `
                     <div class="url-issues">
                         ${url.issues.map(issue => `<span class="pill danger">${this.escapeHtml(issue)}</span>`).join('')}
@@ -720,7 +732,14 @@ class ResultsRenderer {
         // One click to take every URL into a sandbox queue. Raw, not defanged:
         // this is the clipboard, and the destination is a tool that needs the
         // real thing.
-        const allUrls = urls.urls.map(u => u.url).filter(Boolean).join('\n');
+        // Platform links are excluded here on purpose. This clipboard feeds
+        // blocklists, and blocking aka.ms or the tenant's own Safe Links
+        // breaks Outlook for the whole organisation.
+        const allUrls = urls.urls
+            .filter(u => u.safe_to_bulk_copy !== false)
+            .map(u => u.url).filter(Boolean).join('\n');
+        const platformCount = urls.urls
+            .filter(u => u.is_platform_infrastructure).length;
 
         return `
             <div class="result-card">
@@ -729,7 +748,7 @@ class ResultsRenderer {
                         <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/>
                         <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
                     </svg>
-                    <h3 class="result-card-title">${t('URLs')} (${urls.total_count} ${t('found')}, ${urls.suspicious_count} ${t('suspicious')})</h3>
+                    <h3 class="result-card-title">${t('URLs')} (${urls.total_count} ${t('found')}, ${urls.suspicious_count} ${t('suspicious')}${platformCount ? `, ${platformCount} ${t('platform')}` : ''})</h3>
                     ${allUrls ? `<div class="card-actions">${this.copyBtn(allUrls, t('Copy all URLs'))}</div>` : ''}
                 </div>
                 <div class="defang-note">${t('Shown defanged so nobody clicks one by accident. Copy gives the real URL.')}</div>
