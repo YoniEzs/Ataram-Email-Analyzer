@@ -592,3 +592,18 @@ code {
 
     .data-table th { width: 42%; }
 }
+
+
+/* Bulk copy actions in a result-card header (Copy all URLs / hashes). */
+.card-actions {
+    margin-inline-start: auto;
+    display: flex;
+    gap: 0.4rem;
+}
+
+/* Why the URLs in this card look wrong at first glance. */
+.defang-note {
+    font-size: 0.82rem;
+    opacity: 0.75;
+    padding: 0 1rem 0.6rem;
+}

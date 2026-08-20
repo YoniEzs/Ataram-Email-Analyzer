@@ -74,8 +74,24 @@ const render = await page.evaluate(() => {
         authentication: { auth_analysis: { spf: 'fail' } },
         sender_info: { domain: 'b.com', ip: '8.8.8.8', reverse_dns: 'dns.google' },
         content: { urgent_phrases: ['urgent'] },
-        urls: { total_count: 0 },
-        attachments: { total_count: 0 },
+        urls: {
+            total_count: 1, unique_count: 1, suspicious_count: 1,
+            urls: [{
+                url: 'http://evil.example.com/login?id=1',
+                domain: 'evil.example.com',
+                issues: ['suspicious_tld'],
+                is_suspicious: true,
+            }],
+        },
+        attachments: {
+            total_count: 1, suspicious_count: 1,
+            attachments: [{
+                filename: 'invoice.pdf.exe', extension: 'exe', size: 2048,
+                size_formatted: '2.0 KB',
+                sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                issues: ['double_extension'], severity: 'critical', is_suspicious: true,
+            }],
+        },
         routing: { hops: ['hop1'], hop_count: 1 },
         routing_forensics: { hop_count: 1, public_ips: [], originating_ip: null, timezone_offset: null },
         artifacts: {
@@ -157,6 +173,55 @@ expect(artifactText.includes('FCrDNS: fail'), 'export carries the FCrDNS verdict
 expect(artifactText.includes('AS15169'), 'export carries the ASN');
 expect(artifactText.includes('fcrdns_fail'), 'export carries flags');
 expect(/forgeable|לזיוף/.test(artifactText), 'export states which fields are forgeable');
+
+// The two artifacts the analyst still has to verify by hand.
+expect(
+    artifactText.includes('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'),
+    'export carries the attachment SHA-256'
+);
+expect(artifactText.includes('invoice.pdf.exe'), 'export carries the attachment name');
+expect(artifactText.includes('hxxp://evil[.]example[.]com/login?id=1'),
+    'export carries the URL, defanged');
+expect(!artifactText.includes('http://evil.example.com'),
+    'export never carries a live URL');
+
+// A message with neither attachments nor URLs must export exactly as before.
+const emptyExport = await page.evaluate(() => {
+    const r = JSON.parse(JSON.stringify(window.lastAnalysisResult));
+    r.urls = { total_count: 0 };
+    r.attachments = { total_count: 0 };
+    return window.resultsRenderer.buildArtifactText(r);
+});
+expect(!emptyExport.includes('SHA-256'), 'no attachment section when there are none');
+expect(!/###\s*(URLs|קישורים)/.test(emptyExport), 'no URL section when there are none');
+
+// Defanged on screen, real on the clipboard: the URL card is read by a human
+// and copied into a sandbox, and those want opposite things.
+await page.evaluate(() => window.resultsRenderer.render(window.lastAnalysisResult));
+const urlCard = await page.evaluate(() => {
+    const item = document.querySelector('.url-item');
+    if (!item) return null;
+    const copy = item.querySelector('.copy-btn');
+    return {
+        shown: item.querySelector('.url-link').textContent.trim(),
+        copies: copy ? copy.getAttribute('data-copy') : null,
+    };
+});
+expect(urlCard !== null, 'url card renders an item');
+expect(urlCard && urlCard.shown === 'hxxp://evil[.]example[.]com/login?id=1',
+    'url is displayed defanged');
+expect(urlCard && urlCard.copies === 'http://evil.example.com/login?id=1',
+    'url copy button carries the real URL');
+
+const bulk = await page.evaluate(() => {
+    const btns = [...document.querySelectorAll('.card-actions .copy-btn')];
+    return btns.map(b => b.getAttribute('data-copy'));
+});
+expect(bulk.includes('http://evil.example.com/login?id=1'), 'copy-all-urls carries raw URLs');
+expect(
+    bulk.includes('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'),
+    'copy-all-hashes carries the hashes'
+);
 
 // Missing enrichment must explain itself rather than render blank.
 const missingReason = await page.evaluate(() => {

@@ -436,6 +436,37 @@ class ResultsRenderer {
             lines.push(`${t('Advisory SPF')}: ${advisory.result} - ${t('Advisory only - never trusted')}`);
         }
 
+        // The two artifacts the analyst still has to verify by hand. Without
+        // them the exported block names the message but not the things the
+        // next person has to act on.
+        const attachmentList = ((result.attachments || {}).attachments) || [];
+        if (attachmentList.length) {
+            lines.push('', `### ${t('Attachments')}`);
+            attachmentList.forEach(att => {
+                const parts = [att.filename || t('N/A')];
+                const size = att.size_formatted
+                    || (att.size !== undefined ? `${att.size} bytes` : '');
+                if (size) parts.push(size);
+                parts.push(att.sha256 ? `SHA-256: ${att.sha256}` : t('N/A'));
+                lines.push(`- ${parts.join(' | ')}`);
+            });
+        }
+
+        // Defanged here, unlike the per-URL copy button. This block is pasted
+        // into tickets and mail, which auto-link a raw URL and hand a live
+        // phishing link to whoever reads it next.
+        const urlList = ((result.urls || {}).urls) || [];
+        if (urlList.length) {
+            lines.push('', `### ${t('URLs')}`);
+            urlList.forEach(url => {
+                const issues = (url.issues || []).length
+                    ? ` (${url.issues.join(', ')})`
+                    : '';
+                lines.push(`- ${this.defang(url.url)}${issues}`);
+            });
+            lines.push(t('URLs above are defanged - restore hxxp to http before use.'));
+        }
+
         // Spell the trust split out: this text gets pasted somewhere the badges
         // and colours do not survive.
         lines.push(
@@ -657,15 +688,23 @@ class ResultsRenderer {
 
         const urlItems = urls.urls.map(url => `
             <div class="url-item ${url.is_suspicious ? 'suspicious' : ''}">
-                <div class="url-link">${this.escapeHtml(url.url)}</div>
-                <div class="url-domain">${t('Domain')}: ${this.escapeHtml(url.domain)}</div>
+                <div class="url-link">${this.escapeHtml(this.defang(url.url))}</div>
+                <div class="url-domain">${t('Domain')}: ${this.escapeHtml(this.defang(url.domain))}</div>
                 ${url.issues && url.issues.length > 0 ? `
                     <div class="url-issues">
                         ${url.issues.map(issue => `<span class="pill danger">${this.escapeHtml(issue)}</span>`).join('')}
                     </div>` : ''}
-                ${url.domain ? `<div class="value-actions">${this.extBtn(`https://www.virustotal.com/gui/domain/${encodeURIComponent(url.domain)}`, 'VirusTotal')}</div>` : ''}
+                <div class="value-actions">
+                    ${this.copyBtn(url.url)}
+                    ${url.domain ? this.extBtn(`https://www.virustotal.com/gui/domain/${encodeURIComponent(url.domain)}`, 'VirusTotal') : ''}
+                </div>
             </div>
         `).join('');
+
+        // One click to take every URL into a sandbox queue. Raw, not defanged:
+        // this is the clipboard, and the destination is a tool that needs the
+        // real thing.
+        const allUrls = urls.urls.map(u => u.url).filter(Boolean).join('\n');
 
         return `
             <div class="result-card">
@@ -675,7 +714,9 @@ class ResultsRenderer {
                         <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/>
                     </svg>
                     <h3 class="result-card-title">${t('URLs')} (${urls.total_count} ${t('found')}, ${urls.suspicious_count} ${t('suspicious')})</h3>
+                    ${allUrls ? `<div class="card-actions">${this.copyBtn(allUrls, t('Copy all URLs'))}</div>` : ''}
                 </div>
+                <div class="defang-note">${t('Shown defanged so nobody clicks one by accident. Copy gives the real URL.')}</div>
                 <div class="url-list">${urlItems}</div>
             </div>
         `;
@@ -698,6 +739,10 @@ class ResultsRenderer {
                 </div>
             `;
         }
+
+        // Every hash in one click, for pasting into VirusTotal or a sandbox.
+        const allHashes = attachments.attachments
+            .map(a => a.sha256).filter(Boolean).join('\n');
 
         const attItems = attachments.attachments.map(att => `
             <div class="attachment-item ${att.is_suspicious ? 'suspicious' : ''}">
@@ -724,6 +769,7 @@ class ResultsRenderer {
                         <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
                     </svg>
                     <h3 class="result-card-title">${t('Attachments')} (${attachments.total_count} ${t('found')}, ${attachments.suspicious_count} ${t('suspicious')})</h3>
+                    ${allHashes ? `<div class="card-actions">${this.copyBtn(allHashes, t('Copy all hashes'))}</div>` : ''}
                 </div>
                 <div class="attachment-list">${attItems}</div>
             </div>
@@ -814,8 +860,29 @@ class ResultsRenderer {
         return `${display}${actionsHtml}`;
     }
 
-    copyBtn(value) {
-        return `<button type="button" class="mini-btn copy-btn" data-copy="${this.escapeAttr(String(value))}">⧉ ${t('Copy')}</button>`;
+    copyBtn(value, label) {
+        return `<button type="button" class="mini-btn copy-btn" data-copy="${this.escapeAttr(String(value))}">⧉ ${this.escapeHtml(label || t('Copy'))}</button>`;
+    }
+
+    /**
+     * Defang a URL for display: hxxp://evil[.]com/path
+     *
+     * The UI never renders a URL as an anchor, but the same string travels
+     * into the exported artifact block and the printed report — and a ticket
+     * system or mail client will happily turn it back into a live link for
+     * the next person to click. Only the scheme and hostname are altered, so
+     * the path stays readable.
+     *
+     * Display only. Copy buttons carry the real URL, because the whole point
+     * of copying one is to paste it into a sandbox.
+     */
+    defang(value) {
+        const raw = String(value || '');
+        if (!raw) return '';
+        const match = raw.match(/^(https?):\/\/([^/?#]*)(.*)$/i);
+        if (!match) return raw.replace(/\./g, '[.]');
+        const scheme = match[1].toLowerCase() === 'https' ? 'hxxps' : 'hxxp';
+        return `${scheme}://${match[2].replace(/\./g, '[.]')}${match[3]}`;
     }
 
     extBtn(href, label) {
