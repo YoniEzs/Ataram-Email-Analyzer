@@ -125,10 +125,22 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m app.desktop
 ```
 
+Or let the script do all of it:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run-windows.ps1
+```
+
 On Windows, call the venv's `python.exe` directly rather than activating.
 PowerShell's execution policy blocks `Activate.ps1` on a default install,
 and `.venv\Scripts\activate` is cmd syntax that does nothing in PowerShell.
 PowerShell 5.1 also has no `&&`, so run one line at a time.
+
+**Use Python 3.11, 3.12 or 3.13 on Windows — not 3.14.** `yara-python`
+publishes Windows wheels up to 3.13 only, so on 3.14 pip falls back to
+compiling it and fails unless Visual C++ Build Tools are installed. CI tests
+3.11 and 3.12; 3.12 is the safe choice. `python --version` tells you which
+one `py` will use.
 
 A browser tab opens at `http://127.0.0.1:8321`. Set `ATARAM_NO_BROWSER=1` to
 suppress that, or `ATARAM_PORT` to pick a port.
@@ -136,6 +148,14 @@ suppress that, or `ATARAM_PORT` to pick a port.
 A virtual environment is required, not just recommended: one of the pinned
 dependencies (`pyspf`) fails to build against the patched setuptools shipped by
 some system Pythons.
+
+WHOIS, reverse DNS, RDAP, ASN and DKIM verification run with no configuration.
+**IP reputation does not**: AbuseIPDB needs a key, and without one the sending
+IP is still shown and resolved but carries no reputation verdict. Copy
+`backend/.env.example` to `backend/.env` and set `ABUSEIPDB_KEY` (their free
+tier is enough). The file must sit in `backend/`, not the repository root —
+that is the only path `load_dotenv` reads. `VIRUSTOTAL_API_KEY` plus
+`ENABLE_VIRUSTOTAL=true` adds attachment-hash reputation the same way.
 
 Or with Docker, if you would rather not install Python:
 
@@ -148,12 +168,39 @@ Either way, try the synthetic messages in [`samples/`](samples/) — each
 documents the exact verdict it should produce, and those verdicts are enforced
 by `backend/tests/test_samples_regression.py`.
 
-### From a published release
+### From a prebuilt binary, without installing Python
 
-**Desktop app (Windows / macOS / Linux)** — download the zip for your OS from
-the [releases page](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases),
-extract, run `AtaramEmailAnalyzer`. Your browser opens by itself. Binaries are
-unsigned; verify downloads against the release's `SHA256SUMS.txt`.
+> **No release is published yet.** The repository has no tags, so the
+> releases page, the published Docker images and PyPI are all empty. Until
+> a release is cut, use the CI build below or a source checkout.
+
+Every change that can affect the binary builds and smoke-tests all three
+platforms in CI, and those builds are downloadable:
+
+1. Open [Actions → Release Desktop Builds](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/release-desktop.yml).
+2. Pick the newest green run.
+3. Download the artifact for your OS — `desktop-windows-x64`,
+   `desktop-macos-arm64` or `desktop-linux-x64`.
+4. Unzip twice: GitHub wraps the artifact, and inside is the release zip
+   plus a `.sha256` to check it against.
+5. Run `AtaramEmailAnalyzer`. Your browser opens by itself.
+
+CI runs the same smoke test against each binary before uploading it: the
+health endpoint, the UI index, and a real analysis of
+`samples/02-display-name-spoof.eml`.
+
+Two caveats. Downloading a CI artifact requires being signed in to GitHub,
+and artifacts are deleted after 90 days — a release, once cut, has neither
+limit. The binaries are unsigned either way.
+
+### From a published release — *not available yet*
+
+These are the paths once a `v*` tag exists. They do not work today.
+
+**Desktop app** — download the zip for your OS from the
+[releases page](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases),
+extract, run `AtaramEmailAnalyzer`. Binaries are unsigned; verify downloads
+against the release's `SHA256SUMS.txt`.
 
 Note the releases *list*, not `/releases/latest` — the latter excludes
 prereleases, so it resolves to nothing while only a release candidate exists.
@@ -168,15 +215,12 @@ ATARAM_VERSION=0.1.0-rc1 docker compose -f docker-compose.release.yml up
 `ATARAM_VERSION` is required while only a release candidate exists — the
 `:latest` image tag is published for stable releases only.
 
-**pipx** (Python 3.11+) — *not published yet, planned for stable v0.1.0*:
+**pipx** (Python 3.11+):
 
 ```bash
 # This will not work until the package is uploaded to PyPI.
 pipx install ataram-email-analyzer
 ```
-
-Nothing publishes `ataram-email-analyzer` to PyPI yet, so use a source
-checkout, the desktop download or Docker until then.
 
 The desktop and pipx builds bind to `127.0.0.1` only and serve the UI and API
 from one process; the Docker stack is the hardened multi-container deployment

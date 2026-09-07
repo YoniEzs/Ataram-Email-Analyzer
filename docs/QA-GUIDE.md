@@ -4,9 +4,9 @@ A manual test script for a full hand-check of the analyzer. Work top to bottom
 and record pass/fail per line. Every command here was executed and verified on
 a clean checkout; where a step is expected to fail today, it says so.
 
-Automated tests cover 87% of the backend (`385 tests`). This guide deliberately
-concentrates on what automation *cannot* reach: the browser, real Outlook
-files, real API keys, and the deployment paths.
+Automated tests cover 87% of the backend (413 tests as of `739c014`). This
+guide deliberately concentrates on what automation *cannot* reach: the
+browser, real Outlook files, real API keys, and the deployment paths.
 
 ---
 
@@ -36,6 +36,17 @@ PowerShell's execution policy blocks `Activate.ps1` on a default install,
 and `.venv\Scripts\activate` is cmd syntax that does nothing in PowerShell.
 PowerShell 5.1 also has no `&&`, so run one line at a time.
 
+**Python 3.11, 3.12 or 3.13 — not 3.14.** `yara-python` has no 3.14 Windows
+wheel, so pip tries to compile it and fails without Visual C++ Build Tools.
+Use 3.12 if you are choosing.
+
+To just launch the tool rather than run the checks, use the script instead —
+it creates the venv, installs, and starts the app in one step:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\run-windows.ps1
+```
+
 Every `pytest` / `ruff` / `mypy` command below assumes an activated venv. On
 Windows without activation, prefix each with `.\.venv\Scripts\python.exe -m`.
 
@@ -46,7 +57,7 @@ Windows without activation, prefix each with `.\.venv\Scripts\python.exe -m`.
 
 | # | Check | Expected | Result |
 |---|---|---|---|
-| 0.1 | `pytest -q` | `385 passed, 1 skipped`, coverage ≥ 80% | ☐ |
+| 0.1 | `pytest -q` | `413 passed, 1 skipped`, coverage ≥ 80% | ☐ |
 | 0.2 | `ruff check app tests` | `All checks passed!` | ☐ |
 | 0.3 | `mypy` | `Success: no issues found in 31 source files` | ☐ |
 
