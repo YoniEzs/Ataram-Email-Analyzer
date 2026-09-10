@@ -1,121 +1,62 @@
-# Ataram Email Analyzer
+# ITgalya Email Analyzer
 
-Experimental, self-hostable analysis of `.eml` and `.msg` files for phishing
-and malicious-email indicators.
+Local-first phishing and malicious-email triage for `.eml` and Outlook `.msg` files.
 
-[![Backend CI](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/backend-ci.yml)
-[![Frontend CI](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/frontend-ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-> Release status: **pre-release / experimental**. A low score means that the
-> configured checks found no strong indicators. It does not prove that a
-> message is legitimate or safe.
+> **Release status: v0.1.0-rc1 / Public Beta.** Analysis results are advisory. A low score means the configured checks found no strong indicators; it does not prove a message is legitimate or safe.
 
 ## What it does
 
+ITgalya Email Analyzer turns a suspicious email file into a structured SOC/DFIR triage view without executing links or attachments.
+
 - Parses EML and Outlook MSG files.
-- Extracts the analyst triage checklist as structured artifacts and enriches it
-  with reverse DNS, ASN and registry data (see below).
-- Checks suspicious URLs, IDN/homograph indicators and displayed-link mismatch.
-- Inspects attachment names, magic bytes, hashes and ZIP metadata without
-  extracting archives.
+- Extracts sender, subject, recipients, timestamps, sending infrastructure, reverse DNS and Reply-To artifacts.
+- Separates forgeable header claims from independently computed or observed evidence.
+- Detects suspicious URLs, IDN/homograph domains and displayed-link mismatches.
+- Inspects attachment names, magic bytes, hashes and ZIP metadata without detonating or extracting files to disk.
 - Runs bounded YARA scans against message and attachment bytes.
-- Checks URLs and attachments with open-source tooling only, and never runs
-  them: a URL is parsed, never requested, and an attachment is hashed and
-  inspected, never executed or extracted to disk. Analysing a phishing message
-  therefore cannot reach attacker infrastructure or disclose your IP to it.
-- Optionally checks sender IPs with AbuseIPDB, and attachment hashes with
-  VirusTotal when you explicitly enable it (off by default).
-- Looks up SPF, DKIM and DMARC DNS records and domain-registration data via RDAP.
 - Independently verifies DKIM when raw MIME bytes are available.
-- Provides an English/Hebrew interface, JSON export, printable reports and a
-  copy-for-ticket artifact block.
+- Performs DNS, reverse-DNS, FCrDNS, ASN/BGP and RDAP enrichment.
+- Optionally checks sender IPs with AbuseIPDB and attachment hashes with VirusTotal when explicitly enabled.
+- Provides English and Hebrew UI, JSON export, printable reports and copy-for-ticket artifacts.
 
-## Artifacts and enrichment
+## Local-first safety model
 
-Every analysis returns an `artifacts` block covering the fields an analyst
-records for a reported message:
+The desktop build binds only to `127.0.0.1`. The selected email is analyzed on the workstation running the tool.
 
-| Artifact | Enrichment |
-|---|---|
-| Sender address | Display-name spoofing, punycode/homograph, freemail and disposable classification, optional MX |
-| Subject line | Encoded-word charsets, bidi overrides, zero-width characters, reply prefix without thread headers |
-| Recipients | To and Cc split out, plus BCC delivery inferred from `Delivered-To` and friends |
-| Date + time | Normalised to UTC, compared against the `Received` chain for skew and backdating |
-| Sending server IP | Announcing ASN, BGP prefix, allocation country and registry (Team Cymru), registry network object and abuse contact (RDAP) |
-| Reverse DNS | PTR plus forward confirmation (FCrDNS), and comparison against the claimed HELO name |
-| Reply-To | Mismatch against the sender's registered domain, freemail reply target |
+The analyzer does not intentionally visit URLs found in the message and does not execute attachments. Optional enrichment can still disclose limited indicators such as domains, public IP addresses or attachment hashes to the documented DNS/RDAP/reputation services. Read `PRIVACY.md` before analyzing sensitive mail.
 
-All of it is free and keyless: Team Cymru answers over plain DNS, so ASN data
-still resolves in deployments where outbound HTTPS is restricted, and a missing
-RDAP answer is treated as normal rather than an error. Each source reports an
-`enrichment_status` (`ok`, `disabled`, `skipped_no_public_ip`, `unavailable`,
-`error`) so a blank field always says why it is blank.
+## Download
 
-### What gets scored
+Public release assets are published on the GitHub Releases page and linked from the official ITgalya Tools page:
 
-Every artifact and flag carries a `trust` value:
+- Product page: https://tools.itgalya.com/tools/email-analyzer/
+- Releases: https://github.com/YoniEzs/Ataram-Email-Analyzer/releases
 
-| `trust` | Meaning | Scored |
-|---|---|---|
-| `header_claim` | Read from the uploaded file; an attacker controls it | No |
-| `computed` | A deterministic property *of* that claim — script mixing, bidi overrides, self-contradictory timestamps | Yes |
-| `observed` | Re-derived from live DNS or RDAP at analysis time | Yes |
+The RC1 desktop binaries are unsigned. Windows SmartScreen or macOS Gatekeeper may therefore display a first-run warning. Verify the downloaded archive against `SHA256SUMS.txt` from the same release.
 
-The rule is that a scored signal must be one an attacker cannot erase by
-editing headers. So a failed FCrDNS check counts, because it is re-queried from
-DNS; a homoglyph sender domain counts, because choosing that string is itself
-the evidence. A mismatch between reverse DNS and the claimed HELO name is the
-sharpest new indicator here and is deliberately **not** scored: the PTR half is
-observed, but the HELO half is copied out of a forgeable `Received` header.
-Artifact evidence is capped so header forensics cannot dominate a verdict, and
-can only ever raise a score, never lower one.
+### Windows x64
 
-Advisory SPF (`ENABLE_SPF_ADVISORY`, off by default) re-evaluates SPF against
-the IP the `Received` chain claims and the `Return-Path` it claims. Both inputs
-are attacker-controlled — forging a hop that names a legitimate provider
-manufactures a `pass` — so the result is display-only, lives under
-`artifacts.authentication_advisory` rather than `authentication`, and never
-affects the risk score.
+Download `ITgalyaEmailAnalyzer-v0.1.0-rc1-windows-x64.zip`, extract the complete folder and run:
 
-## Authentication trust model
-
-An uploaded email is not a trusted SMTP transaction. Every header in the file,
-including the topmost `Authentication-Results`, `Received` and `Return-Path`,
-can be fabricated.
-
-- SPF/DKIM/DMARC values copied from `Authentication-Results` are shown as
-  **untrusted header claims** and never affect the risk score.
-- DKIM signatures are verified independently against DNS and may affect the
-  score.
-- SPF cannot be reconstructed reliably without the peer IP and SMTP MAIL FROM
-  captured by a trusted receiving MTA.
-- A complete DMARC verdict also needs trusted SPF context and the domain's
-  alignment policy. The analyzer reports relaxed DKIM alignment separately.
-- DNS record presence is informational; it is not proof that a particular
-  message passed authentication.
-
-## Run it in 2 minutes
-
-Every option runs entirely locally.
-
-### From a source checkout (works today)
-
-The fastest way to get the full tool — UI and API in one local process, bound
-to `127.0.0.1`:
-
-macOS / Linux:
-
-```bash
-git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
-cd Ataram-Email-Analyzer/backend
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-prod.txt waitress
-python -m app.desktop
+```text
+ITgalyaEmailAnalyzer.exe
 ```
 
-Windows PowerShell:
+A browser tab opens on the local analyzer URL.
+
+### Linux x64
+
+```bash
+./ITgalyaEmailAnalyzer/ITgalyaEmailAnalyzer
+```
+
+### macOS Apple Silicon
+
+Download the ARM64 archive, extract it and run the bundled `ITgalyaEmailAnalyzer` binary. RC1 is not notarized, so first-run approval may be required in macOS Privacy & Security settings.
+
+## Source checkout
+
+Use Python 3.11, 3.12 or 3.13 on Windows. Python 3.14 is not currently supported by the pinned `yara-python` Windows dependency.
 
 ```powershell
 git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
@@ -125,132 +66,48 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m app.desktop
 ```
 
-Or let the script do all of it:
+The desktop launcher supports the public environment names `ITGALYA_PORT` and `ITGALYA_NO_BROWSER`. Legacy `ATARAM_PORT` and `ATARAM_NO_BROWSER` remain accepted during RC1 for backward compatibility.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run-windows.ps1
-```
+## Docker
 
-On Windows, call the venv's `python.exe` directly rather than activating.
-PowerShell's execution policy blocks `Activate.ps1` on a default install,
-and `.venv\Scripts\activate` is cmd syntax that does nothing in PowerShell.
-PowerShell 5.1 also has no `&&`, so run one line at a time.
-
-**Use Python 3.11, 3.12 or 3.13 on Windows — not 3.14.** `yara-python`
-publishes Windows wheels up to 3.13 only, so on 3.14 pip falls back to
-compiling it and fails unless Visual C++ Build Tools are installed. CI tests
-3.11 and 3.12; 3.12 is the safe choice. `python --version` tells you which
-one `py` will use.
-
-A browser tab opens at `http://127.0.0.1:8321`. Set `ATARAM_NO_BROWSER=1` to
-suppress that, or `ATARAM_PORT` to pick a port.
-
-A virtual environment is required, not just recommended: one of the pinned
-dependencies (`pyspf`) fails to build against the patched setuptools shipped by
-some system Pythons.
-
-WHOIS, reverse DNS, RDAP, ASN and DKIM verification run with no configuration.
-**IP reputation does not**: AbuseIPDB needs a key, and without one the sending
-IP is still shown and resolved but carries no reputation verdict. Copy
-`backend/.env.example` to `backend/.env` and set `ABUSEIPDB_KEY` (their free
-tier is enough). The file must sit in `backend/`, not the repository root —
-that is the only path `load_dotenv` reads. `VIRUSTOTAL_API_KEY` plus
-`ENABLE_VIRUSTOTAL=true` adds attachment-hash reputation the same way.
-
-Or with Docker, if you would rather not install Python:
+For controlled/self-hosted environments:
 
 ```bash
-cp .env.example .env
-docker compose up --build      # then open http://localhost:3000
-```
-
-Either way, try the synthetic messages in [`samples/`](samples/) — each
-documents the exact verdict it should produce, and those verdicts are enforced
-by `backend/tests/test_samples_regression.py`.
-
-### From a prebuilt binary, without installing Python
-
-> **No release is published yet.** The repository has no tags, so the
-> releases page, the published Docker images and PyPI are all empty. Until
-> a release is cut, use the CI build below or a source checkout.
-
-Every change that can affect the binary builds and smoke-tests all three
-platforms in CI, and those builds are downloadable:
-
-1. Open [Actions → Release Desktop Builds](https://github.com/YoniEzs/Ataram-Email-Analyzer/actions/workflows/release-desktop.yml).
-2. Pick the newest green run.
-3. Download the artifact for your OS — `desktop-windows-x64`,
-   `desktop-macos-arm64` or `desktop-linux-x64`.
-4. Unzip twice: GitHub wraps the artifact, and inside is the release zip
-   plus a `.sha256` to check it against.
-5. Run `AtaramEmailAnalyzer`. Your browser opens by itself.
-
-CI runs the same smoke test against each binary before uploading it: the
-health endpoint, the UI index, and a real analysis of
-`samples/02-display-name-spoof.eml`.
-
-Two caveats. Downloading a CI artifact requires being signed in to GitHub,
-and artifacts are deleted after 90 days — a release, once cut, has neither
-limit. The binaries are unsigned either way.
-
-### From a published release — *not available yet*
-
-These are the paths once a `v*` tag exists. They do not work today.
-
-**Desktop app** — download the zip for your OS from the
-[releases page](https://github.com/YoniEzs/Ataram-Email-Analyzer/releases),
-extract, run `AtaramEmailAnalyzer`. Binaries are unsigned; verify downloads
-against the release's `SHA256SUMS.txt`.
-
-Note the releases *list*, not `/releases/latest` — the latter excludes
-prereleases, so it resolves to nothing while only a release candidate exists.
-
-**Docker, from published images** — no build step:
-
-```bash
-curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
-ATARAM_VERSION=0.1.0-rc1 docker compose -f docker-compose.release.yml up
-```
-
-`ATARAM_VERSION` is required while only a release candidate exists — the
-`:latest` image tag is published for stable releases only.
-
-**pipx** (Python 3.11+):
-
-```bash
-# This will not work until the package is uploaded to PyPI.
-pipx install ataram-email-analyzer
-```
-
-The desktop and pipx builds bind to `127.0.0.1` only and serve the UI and API
-from one process; the Docker stack is the hardened multi-container deployment
-for teams.
-
-## Quick start with Docker
-
-Requirements: Docker Engine with Compose v2.
-
-```bash
-git clone https://github.com/YoniEzs/Ataram-Email-Analyzer.git
-cd Ataram-Email-Analyzer
 cp .env.example .env
 docker compose up --build
 ```
 
-Open `http://localhost:3000`. The browser uses same-origin `/api` requests;
-nginx proxies them to the backend. Redis is included for shared rate limits and
-lookup caches. The backend is not published directly to the host.
+Open `http://localhost:3000`.
 
-Optional API keys can be placed in `.env` or entered per request in the UI:
+Internet-facing API deployments require their own authentication/access-control layer, reverse-proxy policy and rate limiting. CORS is not access control.
 
-```dotenv
-ABUSEIPDB_KEY=
-VIRUSTOTAL_API_KEY=
-ENABLE_VIRUSTOTAL=false
-```
+## Resource limits
 
-Before uploading sensitive material, read [PRIVACY.md](PRIVACY.md) and
-[DISCLAIMER.md](DISCLAIMER.md).
+Default hostile-input limits include:
+
+| Limit | Default |
+|---|---:|
+| Upload | 25 MB |
+| MIME parts | 250 |
+| Attachments | 100 |
+| One attachment | 10 MB |
+| Total attachment bytes | 20 MB |
+| URLs analyzed | 500 |
+| Bytes passed to each YARA scan | 8 MB |
+| ZIP members inspected | 100 |
+| ZIP declared uncompressed bytes | 200 MB |
+| ZIP compression-ratio threshold | 100:1 |
+
+Raising these limits increases denial-of-service risk.
+
+## Authentication trust model
+
+An uploaded email is not a trusted SMTP transaction. Headers such as `Authentication-Results`, `Received` and `Return-Path` can be forged.
+
+- SPF/DKIM/DMARC values copied from headers are treated as untrusted claims and do not directly establish authenticity.
+- DKIM signatures can be independently verified against DNS and may affect analysis.
+- SPF cannot be reliably reconstructed without trusted SMTP peer and envelope context.
+- DNS record presence is informational; it does not prove a specific message passed authentication.
 
 ## Development
 
@@ -261,20 +118,9 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-dev.txt
-pytest -q --cov=app --cov-fail-under=80
+pytest -q
 ruff check app tests
 mypy
-```
-
-Windows PowerShell — same steps without activating:
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m ruff check app tests
-.\.venv\Scripts\python.exe -m mypy
 ```
 
 Frontend:
@@ -284,106 +130,19 @@ cd frontend
 npm ci
 npm run check
 npx playwright install chromium
-python -m http.server 8765 --directory src
-# In another shell:
-SMOKE_BASE_URL=http://localhost:8765 npm run test:e2e
+npm run test:e2e
 ```
 
-For a frontend hosted separately from the backend, copy and edit
-`frontend/src/runtime-config.js`:
+Desktop builds are produced and smoke-tested on Windows x64, macOS ARM64 and Linux x64 through GitHub Actions. The smoke test starts the packaged binary, checks the health endpoint and UI, and performs a real analysis against a synthetic phishing sample.
 
-```javascript
-window.ATARAM_CONFIG = { API_BASE_URL: 'https://api.example.com' };
-```
+## Security and privacy
 
-There is deliberately no fallback to an Ataram/Render server. An empty runtime
-configuration always means same-origin.
-
-## Resource limits
-
-Defaults are designed for public-facing hostile input:
-
-| Limit | Default |
-|---|---:|
-| Upload | 25 MB |
-| MIME parts | 250 |
-| Attachments | 100 |
-| One attachment | 10 MB |
-| Total attachment bytes | 20 MB |
-| Text processed | 2,000,000 characters per body representation |
-| URLs analyzed | 500, with 4,096 characters retained per URL |
-| Bytes passed to each YARA scan | 8 MB |
-| ZIP members inspected | 100 |
-| ZIP declared uncompressed bytes | 200 MB |
-| ZIP compression-ratio threshold | 100:1 |
-
-All limits can be changed with the variables documented in
-`backend/.env.example`. Raising them increases denial-of-service risk.
-
-## External data flow
-
-The backend does not intentionally persist uploaded messages in a database or
-file. Hosting platforms, reverse proxies and operating systems can still buffer
-requests temporarily. Optional lookups disclose limited indicators:
-
-| Service | Data sent |
-|---|---|
-| DNS resolver | Sender/signing domains and selectors |
-| RDAP servers | Sender domain |
-| AbuseIPDB | Header-derived public IP and the configured API key |
-| VirusTotal | SHA-256 attachment hashes and the configured API key; not attachment bytes |
-| Reverse DNS | Header-derived public IP, as a PTR query |
-| Team Cymru (`asn.cymru.com`) | Header-derived public IP, encoded in the DNS query name |
-| RDAP servers (IP) | Header-derived public IP |
-
-The header-derived IP is often your own infrastructure rather than a suspected
-sender's. See [PRIVACY.md](PRIVACY.md) before enabling these in an environment
-where your mail topology is sensitive.
-
-See [PRIVACY.md](PRIVACY.md) for the full model and instructions for an offline
-deployment.
-
-## API
-
-The versioned base path is `/api/v1`; `/api/*` remains a compatibility alias.
-OpenAPI 3.0 is served at `/api/openapi.json` and `/api/v1/openapi.json`.
-
-Primary endpoint:
-
-```text
-POST /api/v1/analyze
-Content-Type: multipart/form-data
-emailfile: required .eml or .msg
-abuseipdb_key: optional
-virustotal_key: optional
-```
-
-The API is unauthenticated by default. CORS is only a browser policy and is not
-access control. Put internet-facing deployments behind an authentication layer
-or WAF, use Redis-backed rate limiting, and restrict allowed origins.
-
-## Deployment
-
-- Docker Compose: same-origin frontend/backend and Redis, suitable for local or
-  controlled self-hosting.
-- Render: `render.yaml` provisions a web service and private Key Value instance;
-  `autoDeployTrigger: checksPass` waits for CI.
-- Separate static frontend: set `runtime-config.js` explicitly and configure
-  backend `CORS_ORIGINS`.
-
-See [CLOUDFLARE_RENDER_DEPLOYMENT.md](CLOUDFLARE_RENDER_DEPLOYMENT.md).
-
-## Security and releases
-
-- Manual test script: [docs/QA-GUIDE.md](docs/QA-GUIDE.md)
-- SOC evaluation walkthrough: [docs/SOC-EVALUATION.md](docs/SOC-EVALUATION.md)
-- Vulnerabilities: [SECURITY.md](SECURITY.md)
-- Contribution process: [CONTRIBUTING.md](CONTRIBUTING.md)
-- Release gates: [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
-- Current roadmap: [ROADMAP.md](ROADMAP.md)
-- Third-party dependencies: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+- Privacy model: `PRIVACY.md`
+- Security reporting: `SECURITY.md`
+- Disclaimer: `DISCLAIMER.md`
+- Third-party notices: `THIRD_PARTY_NOTICES.md`
+- Manual QA: `docs/QA-GUIDE.md`
 
 ## License
 
-Project-authored code is available under the [MIT License](LICENSE). Dependencies
-keep their own licenses; review `THIRD_PARTY_NOTICES.md` before redistribution.
+MIT. See `LICENSE`.

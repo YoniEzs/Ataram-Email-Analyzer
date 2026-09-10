@@ -3,36 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Ataram Email Analyzer - Advanced email security analysis tool for detecting phishing and malicious emails">
-    <meta name="keywords" content="email security, phishing detection, email analyzer, ataram">
-    <meta name="author" content="Ataram Security">
-    <title>Ataram Email Analyzer - Email Security Analysis</title>
+    <meta name="description" content="ITgalya Email Analyzer - local email security analysis for phishing and malicious email triage">
+    <meta name="keywords" content="email security, phishing detection, email analyzer, ITgalya, DFIR, SOC">
+    <meta name="author" content="ITgalya">
+    <title>ITgalya Email Analyzer - Email Security Analysis</title>
 
-    <!-- Apply the saved theme before first paint to avoid a flash.
-         External file (not inline) so the desktop build's CSP allows it. -->
     <script src="js/theme-init.js"></script>
-
-    <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
-
-    <!-- Stylesheets -->
     <link rel="stylesheet" href="css/styles.css">
     <link rel="stylesheet" href="css/results.css">
-
-    <!-- Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Top bar -->
     <header class="topbar">
         <div class="container topbar-inner">
             <div class="brand">
                 <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                 </svg>
-                <span class="brand-name">Ataram Email Analyzer</span>
+                <span class="brand-name">ITgalya Email Analyzer</span>
             </div>
             <div class="topbar-actions">
                 <span class="tagline" data-i18n="Advanced Email Security Analysis">Advanced Email Security Analysis</span>
@@ -50,11 +41,8 @@
         </div>
     </header>
 
-    <!-- Main Content -->
     <main class="main">
         <div class="container">
-
-            <!-- Upload Section -->
             <section class="upload-section card">
                 <div class="upload-header">
                     <h2 data-i18n="Analyze Email">Analyze Email</h2>
@@ -74,7 +62,6 @@
                     </div>
                 </div>
 
-                <!-- Optional API Key (collapsed by default) -->
                 <details class="advanced">
                     <summary data-i18n="Advanced options">Advanced options</summary>
                     <div class="api-key-section">
@@ -103,7 +90,6 @@
                     </div>
                 </details>
 
-                <!-- Progress Bar -->
                 <div id="progressBar" class="progress-bar" style="display: none;">
                     <div class="progress-bar-fill"></div>
                     <p class="progress-text" data-i18n="Analyzing email...">Analyzing email...</p>
@@ -111,7 +97,6 @@
                 </div>
             </section>
 
-            <!-- Recent Analysis History -->
             <section id="historySection" class="card history-card" style="display:none;">
                 <div class="history-head">
                     <h3 data-i18n="Recent Analyses">Recent Analyses</h3>
@@ -123,20 +108,15 @@
                 </div>
             </section>
 
-            <!-- Export Bar -->
             <div id="exportBar" class="export-bar" style="display:none;">
                 <button id="copyArtifactsBtn" class="btn btn-secondary" data-i18n="Copy Artifacts">Copy Artifacts</button>
                 <button id="downloadReportBtn" class="btn btn-secondary" data-i18n="Download Report (JSON)">Download Report (JSON)</button>
                 <button id="printReportBtn" class="btn btn-secondary" data-i18n="Save as PDF">Save as PDF</button>
             </div>
 
-            <!-- Results Section -->
             <div id="printHeader" class="print-header" aria-hidden="true"></div>
-            <section id="resultsSection" class="results-section" style="display: none;">
-                <!-- Results will be injected here by JavaScript -->
-            </section>
+            <section id="resultsSection" class="results-section" style="display: none;"></section>
 
-            <!-- Error Section -->
             <section id="errorSection" class="error-section card" style="display: none;">
                 <div class="error-content">
                     <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -150,7 +130,6 @@
                 </div>
             </section>
 
-            <!-- Features Section -->
             <section class="features-section">
                 <h2 class="features-title" data-i18n="What We Analyze">What We Analyze</h2>
                 <div class="features-grid">
@@ -186,21 +165,18 @@
                     </div>
                 </div>
             </section>
-
         </div>
     </main>
 
-    <!-- Footer -->
     <footer class="footer">
         <div class="container">
             <div class="footer-content">
-                <p>&copy; 2024 Ataram Security Platform | <a href="https://ataram.uk">ataram.uk</a></p>
-                <p class="footer-note" data-i18n="Email is processed by the configured analysis server. See PRIVACY.md before uploading sensitive material.">Email is processed by the configured analysis server. See PRIVACY.md before uploading sensitive material.</p>
+                <p>&copy; 2026 ITgalya | <a href="https://tools.itgalya.com/">tools.itgalya.com</a></p>
+                <p class="footer-note" data-i18n="Email is processed by the configured analysis server. See PRIVACY.md before uploading sensitive material.">Desktop analysis runs locally. Network enrichment may query documented external services; review PRIVACY.md before analyzing sensitive material.</p>
             </div>
         </div>
     </footer>
 
-    <!-- Scripts -->
     <script src="runtime-config.js"></script>
     <script src="js/i18n.js"></script>
     <script src="js/config.js"></script>
