@@ -1,5 +1,9 @@
 # Cloudflare Pages Configuration
-# This file is optional - Cloudflare Pages auto-detects static sites
+# This file is optional - Cloudflare Pages auto-detects static sites.
+#
+# The historical project/resource identifier is intentionally retained for RC1
+# to avoid creating a second Cloudflare project during the public-brand rename.
+# User-facing product identity is ITgalya Email Analyzer.
 
 name = "ataram-email-analyzer"
 compatibility_date = "2024-01-01"
@@ -7,8 +11,8 @@ compatibility_date = "2024-01-01"
 [site]
 bucket = "./src"
 
-# Custom domain configuration (set in Cloudflare dashboard)
-# ataram.uk -> Cloudflare Pages
+# Custom domain configuration is managed in Cloudflare.
+# Public product/catalog domain: tools.itgalya.com
 
 # Build configuration
 [build]
@@ -16,5 +20,5 @@ command = ""
 cwd = "src"
 watch_dir = "src"
 
-# Environment variables (set in Cloudflare dashboard)
-# None needed for frontend - API URL is in config.js
+# Environment variables are configured in the deployment platform.
+# For the local desktop product, the bundled frontend talks to loopback only.
