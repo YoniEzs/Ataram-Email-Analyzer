@@ -1,10 +1,12 @@
-# Run Ataram Email Analyzer from the published images - no source checkout
+# Run ITgalya Email Analyzer from the published images - no source checkout
 # and no build step needed:
 #
 #   curl -LO https://raw.githubusercontent.com/YoniEzs/Ataram-Email-Analyzer/main/docker-compose.release.yml
 #   docker compose -f docker-compose.release.yml up
 #
 # Then open http://localhost:3000. Pin a version with ATARAM_VERSION=0.1.0-rc1.
+# ATARAM_VERSION and the GHCR package path are retained as registry compatibility
+# identifiers for RC1; they are not the public product brand.
 # Note: the ':latest' tag is only published for stable releases; while only
 # a release candidate exists, setting ATARAM_VERSION is required.
 # This file mirrors docker-compose.yml exactly, with images pulled from GHCR
@@ -39,6 +41,7 @@ services:
       ABUSEIPDB_KEY: "${ABUSEIPDB_KEY:-}"
       VIRUSTOTAL_API_KEY: "${VIRUSTOTAL_API_KEY:-}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
+      ITGALYA_OFFLINE_MODE: "${ITGALYA_OFFLINE_MODE:-false}"
       ENABLE_WHOIS: "${ENABLE_WHOIS:-true}"
       ENABLE_ABUSEIPDB: "${ENABLE_ABUSEIPDB:-true}"
       ENABLE_VIRUSTOTAL: "${ENABLE_VIRUSTOTAL:-false}"
