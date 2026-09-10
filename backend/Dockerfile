@@ -53,5 +53,9 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:5000/health', timeout=5).raise_for_status()"
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "2", \
+# Gunicorn 25.1+ enables a local control socket by default under $HOME. This
+# container deliberately gives the non-root service account no writable home,
+# and we do not use gunicornc, so disable the unused control interface instead
+# of granting filesystem write access just to satisfy it.
+CMD ["gunicorn", "--no-control-socket", "--bind", "0.0.0.0:5000", "--workers", "2", "--threads", "2", \
      "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "run:app"]
