@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from app.config import _offline_requested
 from app.utils.cache import cache_get, cache_set
 from app.utils.validators import validate_public_ip
 
@@ -36,7 +37,13 @@ class DNSCheckerService:
             raise ImportError("dnspython is required. Install: pip install dnspython")
 
     def get_txt_records(self, domain: str) -> Optional[List[str]]:
-        """Query TXT records for a domain"""
+        """Query TXT records for a domain."""
+        # Defense in depth: Config disables DNS-backed features in offline mode,
+        # but the network primitive itself also refuses to resolve. This prevents
+        # a future caller from accidentally bypassing the privacy master switch.
+        if _offline_requested():
+            return None
+
         cached = cache_get(f"dns:{domain}")
         if cached is not None:
             return cached
@@ -64,6 +71,9 @@ class DNSCheckerService:
         limit: int = 8,
     ) -> Optional[List[str]]:
         """Resolve one record type into plain strings, cached and bounded."""
+        if _offline_requested():
+            return None
+
         cached = cache_get(cache_key)
         if cached is not None:
             return cached
@@ -269,7 +279,7 @@ class DNSCheckerService:
         Non-public addresses are rejected before any query, so an internal
         Received chain cannot disclose RFC1918 space to the resolver.
         """
-        if not ip or not validate_public_ip(ip):
+        if not ip or not validate_public_ip(ip) or _offline_requested():
             return None
 
         cache_key = f"ptr:{ip}"
