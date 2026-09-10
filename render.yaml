@@ -45,7 +45,9 @@ services:
       - key: VIRUSTOTAL_API_KEY
         sync: false
       - key: CORS_ORIGINS
-        value: https://ataram.uk,https://email-analyzer.pages.dev,https://ataram-email-analyzer.pages.dev
+        value: https://tools.itgalya.com,https://email-analyzer.pages.dev,https://ataram-email-analyzer.pages.dev
+      - key: ITGALYA_OFFLINE_MODE
+        value: false
       - key: ENABLE_WHOIS
         value: true
       - key: ENABLE_ABUSEIPDB
@@ -57,7 +59,7 @@ services:
       # Artifact enrichment. These disclose the header-derived sending IP to
       # third-party DNS and RDAP operators. Declared explicitly (rather than
       # left to the code defaults) so a deployment can actually be switched
-      # into the no-disclosure mode PRIVACY.md documents.
+      # into strict offline/no-disclosure mode.
       - key: ENABLE_REVERSE_DNS
         value: true
       - key: ENABLE_IP_RDAP
