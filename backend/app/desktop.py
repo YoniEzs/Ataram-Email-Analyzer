@@ -37,23 +37,15 @@ def _configure_environment() -> None:
     os.environ.setdefault('RATELIMIT_ENABLED', 'false')
     os.environ.setdefault('HOST', '127.0.0.1')
     os.environ.setdefault('LOG_LEVEL', 'WARNING')
-    # YARA fallback note: the bundled_yara path is resolved in app.config at
-    # class-body time — it cannot be done here, because importing this module
-    # already imported the app package (and thus evaluated Config) before
-    # main() runs when launched via the console script.
 
 
 def find_webui() -> Optional[Path]:
     """Locate the static UI: bundled copy first, repo checkout second."""
     here = Path(__file__).resolve()
-    candidates = [here.parent / 'webui']                      # packaged
-    # Only meaningful in a source checkout. Guarded because `parents[2]` does
-    # not exist when this module sits near a filesystem root -- exactly where
-    # a frozen build lands if the user extracts the zip to a drive root, and
-    # the IndexError would fire before the bundled candidate below is tried.
+    candidates = [here.parent / 'webui']
     if len(here.parents) > 2:
-        candidates.append(here.parents[2] / 'frontend' / 'src')  # repo
-    bundle_root = getattr(sys, '_MEIPASS', None)              # PyInstaller
+        candidates.append(here.parents[2] / 'frontend' / 'src')
+    bundle_root = getattr(sys, '_MEIPASS', None)
     if bundle_root:
         candidates.insert(0, Path(bundle_root) / 'app' / 'webui')
     for candidate in candidates:
@@ -85,8 +77,6 @@ def create_desktop_app(webui: Path) -> 'Flask':
 
     app = create_app(DesktopConfig)
 
-    # Registered after the API blueprint, so /api/* and /health keep
-    # precedence over the static catch-all.
     @app.route('/')
     def _index():  # pragma: no cover - trivial
         return send_from_directory(webui, 'index.html')
@@ -111,14 +101,15 @@ def main() -> int:
         return 1
 
     app = create_desktop_app(webui)
-    port = _free_port(int(os.environ.get('ATARAM_PORT', DEFAULT_PORT)))
+    # Keep legacy ATARAM_* environment variables working for RC1 while adding
+    # the new public ITGALYA_* names. Existing users/scripts do not break.
+    configured_port = os.environ.get('ITGALYA_PORT') or os.environ.get('ATARAM_PORT')
+    port = _free_port(int(configured_port or DEFAULT_PORT))
     url = f'http://127.0.0.1:{port}'
 
-    # flush: stdout is block-buffered when redirected to a file or pipe,
-    # and serve() below never returns, so without this the URL would stay
-    # stuck in the buffer for anyone capturing output.
-    print(f'Ataram Email Analyzer running at {url}  (Ctrl+C to quit)', flush=True)
-    if os.environ.get('ATARAM_NO_BROWSER', '').lower() not in ('1', 'true'):
+    print(f'ITgalya Email Analyzer running at {url}  (Ctrl+C to quit)', flush=True)
+    no_browser = os.environ.get('ITGALYA_NO_BROWSER') or os.environ.get('ATARAM_NO_BROWSER', '')
+    if no_browser.lower() not in ('1', 'true'):
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
 
     from waitress import serve  # type: ignore[import-untyped]
