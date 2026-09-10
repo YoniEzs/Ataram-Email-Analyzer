@@ -3,7 +3,7 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Ataram Email Analyzer - Initializing...');
+    console.log('ITgalya Email Analyzer - Initializing...');
 
     // Localize static UI before anything renders text
     window.initI18n();
@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check API health on load
     checkAPIHealth();
 
-    console.log('Ataram Email Analyzer - Ready');
+    console.log('ITgalya Email Analyzer - Ready');
 });
 
 /**
