@@ -1,20 +1,21 @@
 """
-OpenAPI 3.0 document for the Email Analyzer API.
+OpenAPI 3.0 document for the ITgalya Email Analyzer API.
 
 Hand-maintained: update this file when endpoint contracts change.
 Served at /api/openapi.json and /api/v1/openapi.json.
 """
 
-API_VERSION = '2.2'
+API_VERSION = '2.3'
 
 OPENAPI_SPEC = {
     'openapi': '3.0.3',
     'info': {
-        'title': 'Ataram Email Analyzer API',
+        'title': 'ITgalya Email Analyzer API',
         'description': (
-            'Heuristic email security analysis: untrusted SPF/DMARC header '
-            'claims, independent DKIM verification, sender reputation, URL and '
-            'attachment inspection, YARA and VirusTotal integration.'
+            'Local-first heuristic email security analysis with explicit '
+            'evidence trust, independent DKIM verification, sender '
+            'infrastructure enrichment, URL and attachment inspection, YARA, '
+            'optional reputation integrations, and strict offline mode.'
         ),
         'version': API_VERSION,
         'license': {'name': 'MIT'},
@@ -43,12 +44,12 @@ OPENAPI_SPEC = {
                                     'abuseipdb_key': {
                                         'type': 'string',
                                         'format': 'password',
-                                        'description': 'Optional BYOK key sent by the server to AbuseIPDB',
+                                        'description': 'Optional BYOK key sent by the server to AbuseIPDB when enabled',
                                     },
                                     'virustotal_key': {
                                         'type': 'string',
                                         'format': 'password',
-                                        'description': 'Optional BYOK key used for VirusTotal hash-only lookups',
+                                        'description': 'Optional BYOK key used for VirusTotal hash-only lookups when enabled',
                                     },
                                 },
                             }
@@ -68,7 +69,7 @@ OPENAPI_SPEC = {
         },
         '/analyze/url': {
             'post': {
-                'summary': 'Analyze a single URL for phishing indicators',
+                'summary': 'Analyze a single URL for phishing indicators without visiting it',
                 'requestBody': {
                     'required': True,
                     'content': {'application/json': {'schema': {
@@ -101,6 +102,7 @@ OPENAPI_SPEC = {
         '/check/domain': {
             'post': {
                 'summary': 'Check SPF/DMARC records and RDAP info for a domain',
+                'description': 'Unavailable while strict offline mode is enabled.',
                 'requestBody': {
                     'required': True,
                     'content': {'application/json': {'schema': {
@@ -113,20 +115,22 @@ OPENAPI_SPEC = {
                     '200': {'description': 'Domain records and registration info'},
                     '400': {'$ref': '#/components/responses/BadRequest'},
                     '429': {'$ref': '#/components/responses/RateLimited'},
+                    '503': {'$ref': '#/components/responses/FeatureDisabled'},
                 },
             }
         },
         '/check/ip': {
             'post': {
                 'summary': 'Check IP reputation via AbuseIPDB',
+                'description': 'Unavailable while strict offline mode or AbuseIPDB enrichment is disabled.',
                 'requestBody': {
                     'required': True,
                     'content': {'application/json': {'schema': {
                         'type': 'object',
                         'required': ['ip'],
                         'properties': {
-                            'ip': {'type': 'string', 'example': '203.0.113.5'},
-                            'abuseipdb_key': {'type': 'string'},
+                            'ip': {'type': 'string', 'example': '8.8.8.8'},
+                            'abuseipdb_key': {'type': 'string', 'format': 'password'},
                         },
                     }}},
                 },
@@ -134,7 +138,7 @@ OPENAPI_SPEC = {
                     '200': {'description': 'Reputation data'},
                     '400': {'$ref': '#/components/responses/BadRequest'},
                     '429': {'$ref': '#/components/responses/RateLimited'},
-                    '503': {'description': 'Feature disabled'},
+                    '503': {'$ref': '#/components/responses/FeatureDisabled'},
                 },
             }
         },
@@ -151,6 +155,10 @@ OPENAPI_SPEC = {
             },
             'RateLimited': {
                 'description': 'Rate limit exceeded',
+                'content': {'application/json': {'schema': {'$ref': '#/components/schemas/Error'}}},
+            },
+            'FeatureDisabled': {
+                'description': 'The requested network-backed feature is disabled by configuration or strict offline mode',
                 'content': {'application/json': {'schema': {'$ref': '#/components/schemas/Error'}}},
             },
         },
@@ -181,11 +189,11 @@ OPENAPI_SPEC = {
                     'conclusion': {
                         'type': 'object',
                         'description': (
-                            'Concise summary of the key "official artifacts" '
+                            'Concise summary of the key official artifacts '
                             'extracted from the message. Projected from '
-                            '"artifacts" so the two never disagree. Values are '
+                            'artifacts so the two never disagree. Values are '
                             'verbatim as received (RFC2047-decoded); the parsed '
-                            'and normalised view is in artifacts.checklist.'
+                            'and normalized view is in artifacts.checklist.'
                         ),
                         'properties': {
                             'sender_address': {'type': 'string', 'nullable': True},
@@ -200,7 +208,7 @@ OPENAPI_SPEC = {
                             'reverse_dns': {
                                 'type': 'string',
                                 'nullable': True,
-                                'description': 'PTR record of the sending server IP',
+                                'description': 'PTR record of the sending server IP when live enrichment is enabled',
                             },
                             'reply_to': {'type': 'string', 'nullable': True},
                         },
@@ -209,13 +217,12 @@ OPENAPI_SPEC = {
                     'artifacts': {
                         'type': 'object',
                         'description': (
-                            'Analyst triage checklist and its enrichment. Every '
+                            'Analyst triage checklist and enrichment. Every '
                             'artifact and flag carries a trust value: '
-                            '"header_claim" for anything read from the uploaded '
-                            'file, "computed" for a deterministic property of '
-                            'that claim, and "observed" for a live DNS or RDAP '
-                            'lookup performed at analysis time. Only computed '
-                            'and observed signals affect the risk score.'
+                            'header_claim for uploaded-file claims, computed '
+                            'for deterministic properties, and observed for '
+                            'live DNS/RDAP facts. Only computed and observed '
+                            'signals affect the risk score.'
                         ),
                         'properties': {
                             'schema_version': {'type': 'integer'},
@@ -224,27 +231,19 @@ OPENAPI_SPEC = {
                                 'description': (
                                     'Flat summary: sender address, subject, '
                                     'recipients, date, sending server IP, '
-                                    'reverse DNS and Reply-To. Normalised '
-                                    '(parsed address, UTC date, To/Cc split), '
-                                    'unlike the verbatim top-level conclusion.'
+                                    'reverse DNS and Reply-To.'
                                 ),
                             },
                             'sender': {'type': 'object'},
                             'subject': {'type': 'object'},
                             'recipients': {
                                 'type': 'object',
-                                'description': (
-                                    'To and Cc split out, plus bcc_inferred: '
-                                    'envelope recipients that appear in neither.'
-                                ),
+                                'description': 'To and Cc split out, plus inferred envelope-recipient context when available.',
                             },
                             'date': {'type': 'object'},
                             'sending_server': {
                                 'type': 'object',
-                                'description': (
-                                    'Originating IP with reverse-DNS and ASN/RDAP '
-                                    'enrichment under "enrichment".'
-                                ),
+                                'description': 'Originating IP with optional reverse-DNS and ASN/RDAP enrichment.',
                             },
                             'reverse_dns': {'type': 'object'},
                             'reply_to': {'type': 'object'},
@@ -254,19 +253,15 @@ OPENAPI_SPEC = {
                             'authentication_advisory': {
                                 'type': 'object',
                                 'description': (
-                                    'Advisory SPF re-evaluation. Display-only: its '
-                                    'client IP and MAIL FROM come from forgeable '
-                                    'headers, so it never affects the risk score '
-                                    'and is never merged into "authentication".'
+                                    'Advisory SPF re-evaluation. Display-only: '
+                                    'its inputs come from forgeable headers, so '
+                                    'it never affects the risk score.'
                                 ),
                             },
                             'flags': {'type': 'array', 'items': {'type': 'object'}},
                             'enrichment_status': {
                                 'type': 'object',
-                                'description': (
-                                    'Per-source outcome: ok, disabled, '
-                                    'skipped_no_public_ip, unavailable, error.'
-                                ),
+                                'description': 'Per-source outcome such as ok, disabled, skipped_no_public_ip, unavailable, or error.',
                             },
                         },
                     },
@@ -286,7 +281,7 @@ OPENAPI_SPEC = {
                             'verification': {
                                 'type': 'object',
                                 'nullable': True,
-                                'description': 'Independent DKIM verification; SPF/DMARC are not verifiable from an uploaded file alone',
+                                'description': 'Independent DKIM verification when enabled; SPF/DMARC are not independently verifiable from an uploaded file alone',
                             },
                             'spf': {'type': 'string', 'nullable': True},
                             'dmarc': {'type': 'string', 'nullable': True},
@@ -332,7 +327,19 @@ OPENAPI_SPEC = {
                             },
                         },
                     },
-                    'metadata': {'type': 'object'},
+                    'metadata': {
+                        'type': 'object',
+                        'required': ['filename', 'analyzed_at', 'version', 'offline_mode'],
+                        'properties': {
+                            'filename': {'type': 'string'},
+                            'analyzed_at': {'type': 'string', 'format': 'date-time', 'nullable': True},
+                            'version': {'type': 'string'},
+                            'offline_mode': {
+                                'type': 'boolean',
+                                'description': 'True when strict offline mode disabled all network-backed enrichment for this analysis.',
+                            },
+                        },
+                    },
                 },
             },
         },

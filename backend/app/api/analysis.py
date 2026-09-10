@@ -69,7 +69,11 @@ def analyze_email():
                 'message': 'Only .eml and .msg files are supported',
             }), 400
 
-        # API keys come from form (BYOK) or server config — never logged
+        offline_mode = bool(current_app.config.get('OFFLINE_MODE', False))
+
+        # API keys come from form (BYOK) or server config — never logged.
+        # Offline mode disables the integration flags at configuration time,
+        # so keys are ignored rather than merely hidden from the UI.
         abuseipdb_key = None
         if current_app.config.get('ENABLE_ABUSEIPDB'):
             abuseipdb_key = (
@@ -153,6 +157,10 @@ def analyze_email():
             'filename': filename,
             'analyzed_at': analysis_result.get('timestamp'),
             'version': API_VERSION,
+            # Preserve the privacy context with the evidence itself. An analyst
+            # reading an exported JSON report can tell whether live enrichment
+            # was intentionally unavailable during this analysis.
+            'offline_mode': offline_mode,
         }
 
         current_app.logger.info('Analysis complete')
@@ -218,6 +226,12 @@ def analyze_url():
 def check_domain():
     """Check domain SPF/DMARC records and WHOIS info."""
     try:
+        if current_app.config.get('OFFLINE_MODE'):
+            return jsonify({
+                'error': 'Feature disabled',
+                'message': 'Domain lookups are unavailable while offline mode is enabled',
+            }), 503
+
         data = request.get_json(silent=True)
 
         if not data or 'domain' not in data:
@@ -261,6 +275,12 @@ def check_domain():
 def check_ip():
     """Check IP reputation via AbuseIPDB."""
     try:
+        if current_app.config.get('OFFLINE_MODE'):
+            return jsonify({
+                'error': 'Feature disabled',
+                'message': 'IP reputation lookups are unavailable while offline mode is enabled',
+            }), 503
+
         data = request.get_json(silent=True)
 
         if not data or 'ip' not in data:

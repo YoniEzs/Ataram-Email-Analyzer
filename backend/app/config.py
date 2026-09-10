@@ -9,6 +9,24 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(basedir, '..', '.env'))
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    """Read a boolean environment variable with predictable semantics."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _offline_requested() -> bool:
+    """Public ITgalya name plus legacy/generic compatibility."""
+    return _env_bool('ITGALYA_OFFLINE_MODE') or _env_bool('OFFLINE_MODE')
+
+
+def _network_feature_enabled(name: str, default: bool) -> bool:
+    """Offline mode is a hard master switch over every network enrichment."""
+    return not _offline_requested() and _env_bool(name, default)
+
+
 class Config:
     """Base configuration"""
 
@@ -77,7 +95,7 @@ class Config:
             YARA_RULES_PATH = _bundled_yara
 
     # Rate limiting
-    RATELIMIT_ENABLED = os.environ.get('RATELIMIT_ENABLED', 'true').lower() == 'true'
+    RATELIMIT_ENABLED = _env_bool('RATELIMIT_ENABLED', True)
     RATELIMIT_DEFAULT = os.environ.get('RATELIMIT_DEFAULT', '100 per hour')
     # Shared storage for rate-limit counters. With multiple gunicorn workers
     # the in-memory default keeps a separate counter per worker — point this
@@ -93,33 +111,35 @@ class Config:
     WHOIS_TIMEOUT = int(os.environ.get('WHOIS_TIMEOUT', 10))
     HTTP_TIMEOUT = int(os.environ.get('HTTP_TIMEOUT', 10))
 
-    # Features
-    ENABLE_WHOIS = os.environ.get('ENABLE_WHOIS', 'true').lower() == 'true'
-    ENABLE_ABUSEIPDB = os.environ.get('ENABLE_ABUSEIPDB', 'true').lower() == 'true'
-    ENABLE_VIRUSTOTAL = os.environ.get('ENABLE_VIRUSTOTAL', 'false').lower() == 'true'
-    # Independent DKIM verification. SPF/DMARC cannot be reconstructed from
-    # untrusted headers in an uploaded file and are displayed as claims only.
-    ENABLE_AUTH_VERIFICATION = (
-        os.environ.get('ENABLE_AUTH_VERIFICATION', 'true').lower() == 'true'
+    # Privacy master switch. When enabled, every feature capable of making an
+    # outbound lookup is disabled regardless of its individual feature flag.
+    OFFLINE_MODE = _offline_requested()
+
+    # Network-backed features
+    ENABLE_WHOIS = _network_feature_enabled('ENABLE_WHOIS', True)
+    ENABLE_ABUSEIPDB = _network_feature_enabled('ENABLE_ABUSEIPDB', True)
+    ENABLE_VIRUSTOTAL = _network_feature_enabled('ENABLE_VIRUSTOTAL', False)
+    # Independent DKIM verification performs DNS lookups, so offline mode must
+    # disable it as well. Header claims remain available as untrusted evidence.
+    ENABLE_AUTH_VERIFICATION = _network_feature_enabled(
+        'ENABLE_AUTH_VERIFICATION', True
     )
 
     # Artifact enrichment. Reverse DNS and IP intelligence are on by default:
     # both are cheap, keyless, and describe the sending address rather than the
     # message. See PRIVACY.md — they do disclose the sending IP to third parties.
-    ENABLE_REVERSE_DNS = os.environ.get('ENABLE_REVERSE_DNS', 'true').lower() == 'true'
-    ENABLE_IP_RDAP = os.environ.get('ENABLE_IP_RDAP', 'true').lower() == 'true'
-    ENABLE_ASN_LOOKUP = os.environ.get('ENABLE_ASN_LOOKUP', 'true').lower() == 'true'
-    ENABLE_MX_LOOKUP = os.environ.get('ENABLE_MX_LOOKUP', 'false').lower() == 'true'
+    ENABLE_REVERSE_DNS = _network_feature_enabled('ENABLE_REVERSE_DNS', True)
+    ENABLE_IP_RDAP = _network_feature_enabled('ENABLE_IP_RDAP', True)
+    ENABLE_ASN_LOOKUP = _network_feature_enabled('ENABLE_ASN_LOOKUP', True)
+    ENABLE_MX_LOOKUP = _network_feature_enabled('ENABLE_MX_LOOKUP', False)
     # Advisory SPF re-evaluation. Off by default: both of its inputs come from
     # forgeable headers, so the result is display-only and never scored.
-    ENABLE_SPF_ADVISORY = (
-        os.environ.get('ENABLE_SPF_ADVISORY', 'false').lower() == 'true'
-    )
+    ENABLE_SPF_ADVISORY = _network_feature_enabled('ENABLE_SPF_ADVISORY', False)
     SPF_TIMEOUT = int(os.environ.get('SPF_TIMEOUT', 8))
 
     # HTTPS is normally terminated by the application or an upstream proxy.
     # Plain-HTTP local Compose deployments explicitly disable this.
-    FORCE_HTTPS = os.environ.get('FORCE_HTTPS', 'true').lower() == 'true'
+    FORCE_HTTPS = _env_bool('FORCE_HTTPS', True)
 
     # Trusted sender domain whitelist — empty by default.
     # The old default included gmail.com/outlook.com/etc., which are frequently
@@ -135,7 +155,7 @@ class Config:
     # Logging — stdout is the default sink; set LOG_TO_FILE=true for a
     # rotating file log under logs/ as well.
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
-    LOG_TO_FILE = os.environ.get('LOG_TO_FILE', 'false').lower() == 'true'
+    LOG_TO_FILE = _env_bool('LOG_TO_FILE', False)
 
 
 class DevelopmentConfig(Config):

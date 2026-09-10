@@ -3,10 +3,22 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Ataram Email Analyzer - Initializing...');
+    console.log('ITgalya Email Analyzer - Initializing...');
 
     // Localize static UI before anything renders text
     window.initI18n();
+
+    // RC compatibility: one legacy translation key is still referenced by the
+    // print-report template. Normalize it at the translation boundary so no
+    // generated report can expose the retired Ataram product name. The key can
+    // be removed from the template in the next frontend refactor without
+    // changing report behaviour.
+    const translate = window.t;
+    if (typeof translate === 'function') {
+        window.t = (key) => translate(
+            key === 'Ataram Email Analyzer' ? 'ITgalya Email Analyzer' : key
+        );
+    }
 
     // Initialize UI controller
     window.uiController.initDragAndDrop();
@@ -24,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check API health on load
     checkAPIHealth();
 
-    console.log('Ataram Email Analyzer - Ready');
+    console.log('ITgalya Email Analyzer - Ready');
 });
 
 /**

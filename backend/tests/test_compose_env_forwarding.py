@@ -1,11 +1,9 @@
-"""Guard: every ENABLE_* toggle the code reads is forwarded into Docker.
+"""Guard: every network feature toggle the code reads is configurable in deploys.
 
-The backend reads its feature flags from ``os.environ``. Inside a container
-those variables only exist if the compose file forwards them under the
-backend service's ``environment:`` block. A flag the code reads but the
-compose file omits is silently stuck at its default — e.g. setting
-``ENABLE_REVERSE_DNS=false`` in ``.env`` would fail to stop the sending IP
-from being disclosed to third parties. This test fails if that ever regresses.
+The backend reads feature flags from ``os.environ`` through helpers in
+``app.config``. Container/deployment manifests must forward those variables;
+otherwise an operator could set a privacy toggle locally and have it silently
+fall back to a network-enabled default in Docker or Render.
 """
 
 import os
@@ -19,20 +17,38 @@ _CONFIG_PY = os.path.join(
 )
 _COMPOSE_FILES = ('docker-compose.yml', 'docker-compose.release.yml')
 
-# Timeouts that only matter once the enrichment lookups above run; forwarded
-# alongside the ENABLE_* flags so operators can tune them in Docker too.
+# Master privacy switch plus timeouts that matter once enrichment runs.
+_PRIVACY_MASTER = frozenset({'ITGALYA_OFFLINE_MODE'})
 _EXTRA_FORWARDED = frozenset(
     {'DNS_TIMEOUT', 'WHOIS_TIMEOUT', 'HTTP_TIMEOUT', 'SPF_TIMEOUT'}
 )
 
 
 def _enable_flags_read_by_code():
-    """Every ENABLE_* env var config.py pulls from the environment."""
+    """Every ENABLE_* env var config.py consumes.
+
+    Config uses ``_network_feature_enabled('ENABLE_*', default)`` so the
+    offline master switch can override every network feature. Keep support for
+    direct ``os.environ.get`` as well so the guard survives either style.
+    """
     with open(_CONFIG_PY, encoding='utf-8') as fh:
         source = fh.read()
-    flags = set(re.findall(r"os\.environ\.get\(\s*['\"](ENABLE_[A-Z_]+)['\"]", source))
-    assert flags, "no ENABLE_* flags found in config.py — regex out of date?"
+
+    helper_flags = set(re.findall(
+        r"_network_feature_enabled\(\s*['\"](ENABLE_[A-Z_]+)['\"]",
+        source,
+    ))
+    direct_flags = set(re.findall(
+        r"os\.environ\.get\(\s*['\"](ENABLE_[A-Z_]+)['\"]",
+        source,
+    ))
+    flags = helper_flags | direct_flags
+    assert flags, "no ENABLE_* flags found in config.py — parser out of date?"
     return flags
+
+
+def _required_deployment_keys():
+    return _enable_flags_read_by_code() | _PRIVACY_MASTER
 
 
 def _backend_environment_keys(compose_filename):
@@ -81,15 +97,15 @@ def _backend_environment_keys(compose_filename):
     return keys
 
 
-def test_every_enable_flag_is_forwarded_in_compose():
-    required = _enable_flags_read_by_code()
+def test_every_network_toggle_is_forwarded_in_compose():
+    required = _required_deployment_keys()
     for compose_filename in _COMPOSE_FILES:
         forwarded = _backend_environment_keys(compose_filename)
         missing = required - forwarded
         assert not missing, (
             f"{compose_filename} does not forward {sorted(missing)} to the "
-            "backend container, so those flags are stuck at their defaults "
-            "there. Add them under services.backend.environment."
+            "backend container, so those privacy/network flags are stuck at "
+            "their defaults there. Add them under services.backend.environment."
         )
 
 
@@ -103,9 +119,9 @@ def test_enrichment_timeouts_are_forwarded_in_compose():
         )
 
 
-def test_env_example_documents_forwarded_flags():
-    """.env.example should document each ENABLE_* flag the code reads."""
-    required = _enable_flags_read_by_code()
+def test_env_example_documents_network_toggles():
+    """.env.example documents every operator-facing privacy/network flag."""
+    required = _required_deployment_keys()
     path = os.path.join(_REPO_ROOT, '.env.example')
     with open(path, encoding='utf-8') as fh:
         documented = fh.read()
@@ -117,31 +133,23 @@ def test_env_example_documents_forwarded_flags():
 
 
 def _render_yaml_env_keys():
-    """Env var names declared under the backend service's ``envVars:`` block.
-
-    Same textual approach as the compose parser above, matched to
-    ``render.yaml``'s list-of-mappings form (``- key: NAME``).
-    """
+    """Env var names declared under the backend service's ``envVars:`` block."""
     path = os.path.join(_REPO_ROOT, 'render.yaml')
     with open(path, encoding='utf-8') as fh:
-        return set(re.findall(r'^\s*-\s*key:\s*([A-Za-z_][A-Za-z0-9_]*)', fh.read(),
-                              re.MULTILINE))
+        return set(re.findall(
+            r'^\s*-\s*key:\s*([A-Za-z_][A-Za-z0-9_]*)',
+            fh.read(),
+            re.MULTILINE,
+        ))
 
 
-def test_every_enable_flag_is_declared_in_render_yaml():
-    """Render deployments must be able to reach the no-disclosure mode too.
-
-    ENABLE_REVERSE_DNS, ENABLE_IP_RDAP and ENABLE_ASN_LOOKUP default to true
-    in config.py. A Render service that never declares them cannot be switched
-    off, so the sending IP is disclosed to Team Cymru and rdap.org with no
-    operator control — the exact scenario PRIVACY.md tells operators they can
-    avoid.
-    """
-    missing = _enable_flags_read_by_code() - _render_yaml_env_keys()
+def test_every_network_toggle_is_declared_in_render_yaml():
+    """Hosted deployments must preserve the operator's disclosure controls."""
+    missing = _required_deployment_keys() - _render_yaml_env_keys()
     assert not missing, (
         f"render.yaml does not declare {sorted(missing)}, so a Render "
-        "deployment cannot turn those lookups off. Add them under "
-        "services[].envVars."
+        "deployment cannot control those network/privacy features. Add them "
+        "under services[].envVars."
     )
 
 

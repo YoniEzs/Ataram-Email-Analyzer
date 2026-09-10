@@ -28,6 +28,9 @@ services:
       ABUSEIPDB_KEY: "${ABUSEIPDB_KEY:-}"
       VIRUSTOTAL_API_KEY: "${VIRUSTOTAL_API_KEY:-}"
       CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000}"
+      # Master privacy switch. When true it overrides every network enrichment
+      # feature below, even if an individual ENABLE_* flag is true.
+      ITGALYA_OFFLINE_MODE: "${ITGALYA_OFFLINE_MODE:-false}"
       ENABLE_WHOIS: "${ENABLE_WHOIS:-true}"
       ENABLE_ABUSEIPDB: "${ENABLE_ABUSEIPDB:-true}"
       ENABLE_VIRUSTOTAL: "${ENABLE_VIRUSTOTAL:-false}"
