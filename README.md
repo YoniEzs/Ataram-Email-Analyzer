@@ -25,6 +25,25 @@ The desktop build binds only to `127.0.0.1`. The selected email is analyzed on t
 
 The analyzer does not intentionally visit URLs found in the message and does not execute attachments. Optional enrichment can still disclose limited indicators such as domains, public IP addresses or attachment hashes to the documented DNS/RDAP/reputation services. Read `PRIVACY.md` before analyzing sensitive mail.
 
+### Strict offline mode
+
+Set `ITGALYA_OFFLINE_MODE=true` before launching the analyzer when the message must be inspected without external enrichment requests. Offline mode is a master privacy switch: DNS/SPF/DMARC/DKIM lookups, reverse DNS, WHOIS/RDAP/ASN, AbuseIPDB, VirusTotal, MX and SPF advisory lookups are disabled even if an individual feature flag is enabled.
+
+Windows PowerShell:
+
+```powershell
+$env:ITGALYA_OFFLINE_MODE = "true"
+.\ITgalyaEmailAnalyzer.exe
+```
+
+Linux/macOS:
+
+```bash
+ITGALYA_OFFLINE_MODE=true ./ITgalyaEmailAnalyzer
+```
+
+`OFFLINE_MODE=true` remains accepted as a generic compatibility alias.
+
 ## Download
 
 Public release assets are published on the GitHub Releases page and linked from the official ITgalya Tools page:
@@ -33,6 +52,14 @@ Public release assets are published on the GitHub Releases page and linked from 
 - Releases: https://github.com/YoniEzs/Ataram-Email-Analyzer/releases
 
 The RC1 desktop binaries are unsigned. Windows SmartScreen or macOS Gatekeeper may therefore display a first-run warning. Verify the downloaded archive against `SHA256SUMS.txt` from the same release.
+
+Tagged desktop releases also publish GitHub build provenance attestations for the release ZIP archives. With GitHub CLI installed, a downloaded archive can be verified against this repository with:
+
+```bash
+gh attestation verify ITgalyaEmailAnalyzer-v0.1.0-rc1-windows-x64.zip --repo YoniEzs/Ataram-Email-Analyzer
+```
+
+A successful attestation verifies how the artifact was produced by GitHub Actions; it is complementary to, not a replacement for, platform code signing.
 
 ### Windows x64
 
@@ -142,6 +169,7 @@ Desktop builds are produced and smoke-tested on Windows x64, macOS ARM64 and Lin
 - Disclaimer: `DISCLAIMER.md`
 - Third-party notices: `THIRD_PARTY_NOTICES.md`
 - Manual QA: `docs/QA-GUIDE.md`
+- Production hardening gates: `PRODUCTION_HARDENING.md`
 
 ## License
 
