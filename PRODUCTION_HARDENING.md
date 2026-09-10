@@ -14,8 +14,9 @@ Current target: `v0.1.0-rc1` (Public Beta)
 - [x] Windows, Linux, and macOS desktop package builds.
 - [x] Packaged desktop smoke test calls `/health`, loads the bundled UI, and performs an EML analysis.
 - [x] Release archives include SHA-256 checksums.
-- [ ] Desktop release archives have GitHub build provenance attestations.
-- [ ] Release workflow uses least-privilege permissions per job.
+- [x] Release workflow uses least-privilege permissions per job.
+- [x] Strict offline mode has regression coverage that blocks DNS/HTTP enrichment and records the mode in analysis metadata.
+- [x] Desktop release workflow generates GitHub build-provenance attestations for release ZIP archives. The first tagged release must still verify the attestation end to end.
 
 ## Manual gates before stable
 
@@ -23,9 +24,10 @@ Current target: `v0.1.0-rc1` (Public Beta)
 - [ ] Analyze a genuine Outlook-generated `.msg` file.
 - [ ] Analyze a genuine Outlook-generated `.msg` file containing at least one attachment.
 - [ ] Exercise Hebrew RTL, JSON export, print/report flow, history, and clipboard functions in the packaged build.
-- [ ] Confirm offline mode performs no enrichment network requests.
+- [ ] Confirm strict offline mode on a packaged build with network observation in addition to automated isolation tests.
 - [ ] Exercise optional reputation integrations with: no keys, AbuseIPDB only, VirusTotal only, both, and invalid keys.
 - [ ] Review a representative set of legitimate mail for false positives and phishing mail for false negatives.
+- [ ] Verify a tagged release's SHA-256 file and GitHub provenance attestation after downloading from the public release page.
 
 ## Signing and distribution
 
